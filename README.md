@@ -7,7 +7,7 @@ https://aieco.hk/blog/ai-soul-awakening-protocol
 
 ## 文件
 
-- [WebSocket Relay 生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：用 Nuxt 3 / Nitro 生成線上聊天 relay server。
+- [WebSocket Relay 生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：用 Nuxt 4 / Nitro 生成線上聊天 relay server。
 - [本機 Dart Relay 範例](tool/aieco_light_relay.dart)：不加依賴的測試 relay，可在開發機直接跑。
 
 ## 功能
