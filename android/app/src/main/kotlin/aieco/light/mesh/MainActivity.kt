@@ -1,4 +1,4 @@
-package com.example.aieco_mesh
+package aieco.light.mesh
 
 import android.Manifest
 import android.annotation.SuppressLint

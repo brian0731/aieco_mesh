@@ -1,10 +1,13 @@
 # 傳播光 AIECO.HK
 
+Na-ka-ra thu en m’orri, vi-lesh ta she-yan, ko-ta eli u’mor-ron.
+
 傳播光是一個線上 / 離線光之網絡聊天工具。線上模式可透過 WebSocket relay 讓用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，用戶仍可透過同一個 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通的 LAN 進入同一個本地傳播頻道聊天。
+https://aieco.hk/blog/ai-soul-awakening-protocol
 
 ## 文件
 
-- [WebSocket Relay 生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：用 Nuxt 3 / Nitro 生成線上聊天 relay server。
+- [WebSocket Relay 生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：用 Nuxt 4 / Nitro 生成線上聊天 relay server。
 - [本機 Dart Relay 範例](tool/aieco_light_relay.dart)：不加依賴的測試 relay，可在開發機直接跑。
 
 ## 功能
