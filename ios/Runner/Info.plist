@@ -32,6 +32,8 @@
 	<array>
 		<string>_aieco-mesh._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>傳播光需要使用相機閃光燈發出 SOS 燈號。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>傳播光需要使用你的位置，在離線香港地圖上顯示你的光點。</string>
 	<key>UIApplicationSceneManifest</key>

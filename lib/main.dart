@@ -168,6 +168,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   late final WifiMeshController _wifiMesh;
   late final LightRadarController _radar;
   late final TabController _tabController;
+  final _sosLight = _SosLightController();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _messagesScrollController = ScrollController();
   Timer? _radarTrackingTimer;
@@ -212,6 +213,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     _mesh.dispose();
     _wifiMesh.dispose();
     _radar.dispose();
+    _sosLight.dispose();
     _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
     _radarTrackingTimer?.cancel();
@@ -675,6 +677,10 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _SosLightButton(controller: _sosLight),
               ),
             ],
             bottom: TabBar(
@@ -3491,6 +3497,266 @@ class _CommunityNetworkPageState extends State<CommunityNetworkPage> {
             ),
     );
   }
+}
+
+class _SosLightButton extends StatelessWidget {
+  const _SosLightButton({required this.controller});
+
+  final _SosLightController controller;
+
+  Future<void> _handlePressed(BuildContext context) async {
+    String? message;
+    if (controller.active) {
+      message = await controller.stop();
+    } else {
+      final confirmed = await _confirmStart(context);
+      if (confirmed) {
+        message = await controller.start();
+      }
+    }
+    if (!context.mounted || message == null) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<bool> _confirmStart(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('啟動 SOS 燈？'),
+          content: const Text('手機閃光燈會持續閃出 SOS 燈號，直到你再按一次停止。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.flash_on),
+              label: const Text('確認啟動'),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed == true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final active = controller.active;
+        final foregroundColor = active ? Colors.white : const Color(0xFFC4512C);
+        final backgroundColor = active
+            ? const Color(0xFFC4512C)
+            : const Color(0xFFFFEEE3);
+
+        return Tooltip(
+          message: active ? '停止 SOS 燈' : '啟動 SOS 燈',
+          child: FilledButton.icon(
+            onPressed: controller.busy ? null : () => _handlePressed(context),
+            icon: controller.busy
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.flash_on, size: 16),
+            label: const Text(
+              'SOS 燈',
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: backgroundColor,
+              foregroundColor: foregroundColor,
+              disabledBackgroundColor: backgroundColor.withValues(alpha: 0.62),
+              disabledForegroundColor: foregroundColor.withValues(alpha: 0.62),
+              minimumSize: const Size(78, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              textStyle: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SosLightController extends ChangeNotifier {
+  static const MethodChannel _channel = MethodChannel(
+    'hk.aieco.propagation_light/wifi_mesh',
+  );
+  static const _sosPattern = <_SosPulse>[
+    _SosPulse(true, Duration(milliseconds: 220)),
+    _SosPulse(false, Duration(milliseconds: 220)),
+    _SosPulse(true, Duration(milliseconds: 220)),
+    _SosPulse(false, Duration(milliseconds: 220)),
+    _SosPulse(true, Duration(milliseconds: 220)),
+    _SosPulse(false, Duration(milliseconds: 660)),
+    _SosPulse(true, Duration(milliseconds: 660)),
+    _SosPulse(false, Duration(milliseconds: 220)),
+    _SosPulse(true, Duration(milliseconds: 660)),
+    _SosPulse(false, Duration(milliseconds: 220)),
+    _SosPulse(true, Duration(milliseconds: 660)),
+    _SosPulse(false, Duration(milliseconds: 660)),
+    _SosPulse(true, Duration(milliseconds: 220)),
+    _SosPulse(false, Duration(milliseconds: 220)),
+    _SosPulse(true, Duration(milliseconds: 220)),
+    _SosPulse(false, Duration(milliseconds: 220)),
+    _SosPulse(true, Duration(milliseconds: 220)),
+    _SosPulse(false, Duration(milliseconds: 1540)),
+  ];
+
+  bool _active = false;
+  bool _busy = false;
+  bool _disposed = false;
+  int _runId = 0;
+  String? _errorMessage;
+
+  bool get active => _active;
+  bool get busy => _busy;
+
+  Future<String?> toggle() {
+    return _active ? stop() : start();
+  }
+
+  Future<String?> start() async {
+    if (_busy || _active) {
+      return null;
+    }
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      _errorMessage = 'SOS 燈需要 Android / iOS 手機閃光燈。';
+      _notify();
+      return _errorMessage;
+    }
+
+    final runId = ++_runId;
+    _active = true;
+    _busy = true;
+    _errorMessage = null;
+    _notify();
+
+    final ready = await _setTorch(true);
+    if (!_isCurrent(runId)) {
+      await _setTorch(false, updateError: false);
+      return null;
+    }
+
+    _busy = false;
+    if (!ready) {
+      _active = false;
+      _runId += 1;
+      _notify();
+      return _errorMessage;
+    }
+
+    _notify();
+    unawaited(
+      _runPattern(
+        runId,
+        startIndex: 1,
+        initialDelay: _sosPattern.first.duration,
+      ),
+    );
+    return null;
+  }
+
+  Future<String?> stop() async {
+    if (!_active && !_busy) {
+      return null;
+    }
+
+    _active = false;
+    _busy = true;
+    _runId += 1;
+    _notify();
+    await _setTorch(false, updateError: false);
+    _busy = false;
+    _notify();
+    return null;
+  }
+
+  Future<void> _runPattern(
+    int runId, {
+    required int startIndex,
+    required Duration initialDelay,
+  }) async {
+    await Future<void>.delayed(initialDelay);
+
+    var index = startIndex;
+    while (_isCurrent(runId)) {
+      final pulse = _sosPattern[index];
+      final ok = await _setTorch(pulse.enabled);
+      if (!_isCurrent(runId)) {
+        return;
+      }
+      if (!ok && pulse.enabled) {
+        _active = false;
+        _runId += 1;
+        await _setTorch(false, updateError: false);
+        _notify();
+        return;
+      }
+      await Future<void>.delayed(pulse.duration);
+      index = (index + 1) % _sosPattern.length;
+    }
+  }
+
+  Future<bool> _setTorch(bool enabled, {bool updateError = true}) async {
+    try {
+      await _channel.invokeMethod<Object?>('setTorch', <String, Object?>{
+        'enabled': enabled,
+      });
+      return true;
+    } on PlatformException catch (error) {
+      if (updateError) {
+        _errorMessage = error.message ?? 'SOS 燈操作失敗：${error.code}';
+      }
+    } on MissingPluginException {
+      if (updateError) {
+        _errorMessage = '目前平台未提供 SOS 燈原生控制。';
+      }
+    }
+    return false;
+  }
+
+  bool _isCurrent(int runId) {
+    return !_disposed && _active && _runId == runId;
+  }
+
+  void _notify() {
+    if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    final shouldStopTorch = _active || _busy;
+    _disposed = true;
+    _active = false;
+    _runId += 1;
+    if (shouldStopTorch) {
+      unawaited(_setTorch(false, updateError: false));
+    }
+    super.dispose();
+  }
+}
+
+class _SosPulse {
+  const _SosPulse(this.enabled, this.duration);
+
+  final bool enabled;
+  final Duration duration;
 }
 
 class _WebPagePlaceholder extends StatelessWidget {

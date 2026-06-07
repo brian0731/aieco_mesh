@@ -10,6 +10,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -91,6 +94,7 @@ private class WifiMeshBridge(private val activity: Activity) {
     companion object {
         const val CHANNEL_NAME = "hk.aieco.propagation_light/wifi_mesh"
         private const val PERMISSION_REQUEST_CODE = 4788
+        private const val TORCH_PERMISSION_REQUEST_CODE = 4789
         private const val APP_SERVICE_INSTANCE = "AIECO Mesh"
         private const val APP_SERVICE_TYPE = "_aieco-mesh._tcp"
     }
@@ -100,6 +104,8 @@ private class WifiMeshBridge(private val activity: Activity) {
     private val wifiManager = appContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private val locationManager =
         appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    private val cameraManager =
+        appContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val p2pManager =
         appContext.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
     private val connectivityManager =
@@ -125,6 +131,7 @@ private class WifiMeshBridge(private val activity: Activity) {
     private var networkGeneration = 0L
     private var receiverRegistered = false
     private var pendingLocationResult: MethodChannel.Result? = null
+    private var torchCameraId: String? = null
 
     private val receiver =
         object : BroadcastReceiver() {
@@ -216,6 +223,7 @@ private class WifiMeshBridge(private val activity: Activity) {
             runCatching { appContext.unregisterReceiver(receiver) }
             receiverRegistered = false
         }
+        runCatching { applyTorch(false) }
         pendingLocationResult?.error("activity_destroyed", "定位中斷。", null)
         pendingLocationResult = null
         runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
@@ -278,6 +286,7 @@ private class WifiMeshBridge(private val activity: Activity) {
                 activity.startActivity(intent)
                 result.success(true)
             }
+            "setTorch" -> setTorch(call.argument<Boolean>("enabled") == true, result)
             "discoverPeers" -> discoverPeers(result)
             "discoverAppPeers" -> discoverAppPeers(result)
             "getPeers" -> {
@@ -370,6 +379,7 @@ private class WifiMeshBridge(private val activity: Activity) {
             "wifiDirectSupported" to (p2pManager != null && hasP2pFeature),
             "localOnlyHotspotSupported" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O),
             "bluetoothSupported" to (bluetoothAdapter != null && hasBluetoothFeature),
+            "torchSupported" to hasTorch(),
             "canOpenWifiSettings" to true,
             "canOpenBluetoothSettings" to true,
             "canOpenBluetoothTetherSettings" to true,
@@ -391,6 +401,102 @@ private class WifiMeshBridge(private val activity: Activity) {
             "boundToBluetooth" to (bluetoothNetwork != null && localNetwork == null),
             "networkGeneration" to networkGeneration
         )
+    }
+
+    private fun setTorch(enabled: Boolean, result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            result.error("torch_unavailable", "此 Android 版本未支援 SOS 燈。", null)
+            return
+        }
+
+        if (!hasTorch()) {
+            result.error("torch_unavailable", "此裝置未找到可用閃光燈。", null)
+            return
+        }
+
+        if (enabled && !hasPermission(Manifest.permission.CAMERA)) {
+            activity.requestPermissions(
+                arrayOf(Manifest.permission.CAMERA),
+                TORCH_PERMISSION_REQUEST_CODE
+            )
+            result.error(
+                "permission_missing",
+                "請允許相機權限後再按一次 SOS 燈。",
+                mapOf(
+                    "required" to listOf(Manifest.permission.CAMERA),
+                    "missing" to listOf(Manifest.permission.CAMERA)
+                )
+            )
+            return
+        }
+
+        try {
+            applyTorch(enabled)
+            result.success(
+                mapOf(
+                    "enabled" to enabled,
+                    "torchSupported" to true,
+                    "message" to if (enabled) "SOS 燈已啟動。" else "SOS 燈已停止。"
+                )
+            )
+        } catch (error: SecurityException) {
+            result.error(
+                "permission_missing",
+                "需要相機權限後才可使用 SOS 燈。",
+                mapOf(
+                    "required" to listOf(Manifest.permission.CAMERA),
+                    "missing" to listOf(Manifest.permission.CAMERA)
+                )
+            )
+        } catch (error: CameraAccessException) {
+            result.error("torch_unavailable", "未能存取手機閃光燈。", error.reason)
+        } catch (error: Exception) {
+            result.error("torch_failed", error.message ?: "SOS 燈操作失敗。", null)
+        }
+    }
+
+    private fun applyTorch(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return
+        }
+        val cameraId = findTorchCameraId() ?: return
+        cameraManager.setTorchMode(cameraId, enabled)
+    }
+
+    private fun hasTorch(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && findTorchCameraId() != null
+    }
+
+    private fun findTorchCameraId(): String? {
+        torchCameraId?.let { return it }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return null
+        }
+
+        return try {
+            var fallback: String? = null
+            for (cameraId in cameraManager.cameraIdList) {
+                val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+                val hasFlash =
+                    characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                if (!hasFlash) {
+                    continue
+                }
+
+                if (fallback == null) {
+                    fallback = cameraId
+                }
+                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                if (facing == CameraCharacteristics.LENS_FACING_BACK) {
+                    torchCameraId = cameraId
+                    return cameraId
+                }
+            }
+            torchCameraId = fallback
+            fallback
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun permissionSnapshot(): Map<String, Any?> {

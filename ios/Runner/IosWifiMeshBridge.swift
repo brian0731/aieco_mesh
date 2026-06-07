@@ -1,4 +1,5 @@
 import Flutter
+import AVFoundation
 import Darwin
 import Network
 import UIKit
@@ -61,6 +62,8 @@ final class IosWifiMeshBridge: NSObject {
     case "openAppSettings":
       openAppSettings()
       result(status(message: "已打開 app 權限設定。"))
+    case "setTorch":
+      setTorch(from: call.arguments, result: result)
     case "currentLocation":
       result(FlutterMethodNotImplemented)
     default:
@@ -75,6 +78,7 @@ final class IosWifiMeshBridge: NSObject {
       "wifiPeerSupported": true,
       "localOnlyHotspotSupported": false,
       "bluetoothSupported": false,
+      "torchSupported": hasTorch(),
       "canOpenWifiSettings": true,
       "canOpenBluetoothSettings": true,
       "canOpenBluetoothTetherSettings": false,
@@ -83,6 +87,97 @@ final class IosWifiMeshBridge: NSObject {
         "missing": []
       ]
     ]
+  }
+
+  private func setTorch(from arguments: Any?, result: @escaping FlutterResult) {
+    let args = arguments as? [String: Any]
+    let enabled = args?["enabled"] as? Bool ?? false
+    let authorization = AVCaptureDevice.authorizationStatus(for: .video)
+
+    if !enabled && authorization != .authorized {
+      result([
+        "enabled": false,
+        "torchSupported": hasTorch(),
+        "message": "SOS 燈已停止。"
+      ])
+      return
+    }
+
+    switch authorization {
+    case .authorized:
+      setTorch(enabled: enabled, result: result)
+    case .notDetermined:
+      AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+        DispatchQueue.main.async {
+          guard let strongSelf = self else {
+            result(FlutterError(
+              code: "torch_unavailable",
+              message: "SOS 燈控制已中斷。",
+              details: nil
+            ))
+            return
+          }
+          if granted {
+            strongSelf.setTorch(enabled: enabled, result: result)
+          } else {
+            result(FlutterError(
+              code: "permission_missing",
+              message: "需要相機權限後才可使用 SOS 燈。",
+              details: ["missing": ["NSCameraUsageDescription"]]
+            ))
+          }
+        }
+      }
+    case .denied, .restricted:
+      result(FlutterError(
+        code: "permission_missing",
+        message: "請到 iOS 設定允許相機權限後再按 SOS 燈。",
+        details: ["missing": ["NSCameraUsageDescription"]]
+      ))
+    @unknown default:
+      result(FlutterError(
+        code: "permission_missing",
+        message: "暫時未能確認相機權限。",
+        details: nil
+      ))
+    }
+  }
+
+  private func setTorch(enabled: Bool, result: FlutterResult) {
+    guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else {
+      result(FlutterError(
+        code: "torch_unavailable",
+        message: "此裝置未找到可用閃光燈。",
+        details: nil
+      ))
+      return
+    }
+
+    do {
+      try device.lockForConfiguration()
+      defer { device.unlockForConfiguration() }
+
+      if enabled {
+        try device.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
+      } else {
+        device.torchMode = .off
+      }
+      result([
+        "enabled": enabled,
+        "torchSupported": true,
+        "message": enabled ? "SOS 燈已啟動。" : "SOS 燈已停止。"
+      ])
+    } catch {
+      result(FlutterError(
+        code: "torch_failed",
+        message: "SOS 燈操作失敗。",
+        details: error.localizedDescription
+      ))
+    }
+  }
+
+  private func hasTorch() -> Bool {
+    return AVCaptureDevice.default(for: .video)?.hasTorch == true
   }
 
   private func status(message: String? = nil) -> [String: Any] {

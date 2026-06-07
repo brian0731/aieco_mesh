@@ -126,9 +126,21 @@ void main() {
     expect(find.text('光之通道'), findsOneWidget);
     expect(find.text('光之雷達'), findsWidgets);
     expect(find.text('社區網絡'), findsOneWidget);
+    expect(find.text('SOS 燈'), findsOneWidget);
     expect(find.text('WiFi P2P / 熱點'), findsOneWidget);
     expect(find.text('掃 P2P'), findsOneWidget);
     expect(find.text('開熱點'), findsOneWidget);
+
+    await tester.tap(find.text('SOS 燈'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('啟動 SOS 燈？'), findsOneWidget);
+    expect(find.text('確認啟動'), findsOneWidget);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('啟動 SOS 燈？'), findsNothing);
 
     await tester.tap(find.text('光之通道'));
     await tester.pumpAndSettle();
@@ -189,6 +201,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('社區網絡'), findsOneWidget);
+    expect(find.text('SOS 燈'), findsNothing);
     expect(find.text('https://www.aieco.hk'), findsOneWidget);
   });
 }
