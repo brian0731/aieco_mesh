@@ -187,6 +187,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     _radar = LightRadarController();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_handleTabChange);
+    _sosLight.addListener(_handleSosLightChange);
 
     unawaited(_initializeMesh());
   }
@@ -213,6 +214,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     _mesh.dispose();
     _wifiMesh.dispose();
     _radar.dispose();
+    _sosLight.removeListener(_handleSosLightChange);
     _sosLight.dispose();
     _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
@@ -227,6 +229,18 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && widget.autoStart) {
       unawaited(_refreshWirelessStatusAndRejoin(forceRejoin: true));
+      unawaited(_locateRadar());
+    }
+  }
+
+  void _handleSosLightChange() {
+    final active = _sosLight.active;
+    if (_mesh.sosActive == active) {
+      return;
+    }
+
+    _mesh.setSosActive(active);
+    if (active) {
       unawaited(_locateRadar());
     }
   }
@@ -860,6 +874,13 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
     final nearbyContactIds = nearbyContacts
         .map((contact) => contact.id)
         .toSet();
+    final sosContacts =
+        contacts.where((contact) => contact.isSosActive).toList()..sort((a, b) {
+          if (a.isMe == b.isMe) {
+            return a.name.compareTo(b.name);
+          }
+          return a.isMe ? -1 : 1;
+        });
     final closestContacts = _closestRadarContacts(
       contacts: contacts,
       currentLocation: widget.mesh.myLocation,
@@ -898,13 +919,22 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                                 ?.copyWith(fontWeight: FontWeight.w800),
                           ),
                           Text(
-                            nearbyCount == 0
+                            sosContacts.isNotEmpty
+                                ? '求救光點 ${sosContacts.length} 個'
+                                : nearbyCount == 0
                                 ? effectiveMapMode == _RadarMapMode.online
                                       ? '線上 Google Map'
                                       : '離線局部地圖'
                                 : '$_nearbyRadarLabel $nearbyCount 個光點',
                             style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: const Color(0xFF66756D)),
+                                ?.copyWith(
+                                  color: sosContacts.isNotEmpty
+                                      ? const Color(0xFFB00020)
+                                      : const Color(0xFF66756D),
+                                  fontWeight: sosContacts.isNotEmpty
+                                      ? FontWeight.w800
+                                      : null,
+                                ),
                           ),
                         ],
                       ),
@@ -991,6 +1021,13 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
           ),
           _ClosestRadarStrip(
             contacts: closestContacts,
+            currentLocation: widget.mesh.myLocation,
+            selectedContactId: selectedContactId,
+            onSelectedContact: _selectContact,
+            onQuoteContactName: widget.onQuoteContactName,
+          ),
+          _SosRadarStrip(
+            contacts: sosContacts,
             currentLocation: widget.mesh.myLocation,
             selectedContactId: selectedContactId,
             onSelectedContact: _selectContact,
@@ -1151,6 +1188,104 @@ class _ClosestRadarStrip extends StatelessWidget {
                       );
                     },
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SosRadarStrip extends StatelessWidget {
+  const _SosRadarStrip({
+    required this.contacts,
+    required this.currentLocation,
+    required this.selectedContactId,
+    required this.onSelectedContact,
+    required this.onQuoteContactName,
+  });
+
+  final List<RadarContact> contacts;
+  final DeviceLocation? currentLocation;
+  final String? selectedContactId;
+  final ValueChanged<String> onSelectedContact;
+  final ValueChanged<String> onQuoteContactName;
+
+  @override
+  Widget build(BuildContext context) {
+    if (contacts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final location = currentLocation;
+
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+      child: Row(
+        children: [
+          const Chip(
+            avatar: Icon(Icons.warning_amber, size: 16),
+            label: Text('求救光點'),
+            side: BorderSide(color: Color(0xFFE0B8AE)),
+            backgroundColor: Color(0xFFFFEEE9),
+            visualDensity: VisualDensity.compact,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: contacts.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final contact = contacts[index];
+                final distance = location == null
+                    ? null
+                    : contact.distanceFrom(location);
+                final isSelected = contact.id == selectedContactId;
+                final label = distance == null
+                    ? contact.isMe
+                          ? '${contact.name}（你）'
+                          : contact.name
+                    : '${contact.isMe ? '${contact.name}（你）' : contact.name} ${distance.toStringAsFixed(1)}m';
+
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ActionChip(
+                      avatar: const Icon(Icons.warning_amber, size: 16),
+                      label: Text(label),
+                      side: BorderSide(
+                        color: isSelected
+                            ? const Color(0xFFB00020)
+                            : const Color(0xFFE0B8AE),
+                      ),
+                      backgroundColor: isSelected
+                          ? const Color(0xFFFFDAD6)
+                          : const Color(0xFFFFEEE9),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: '選取求救光點',
+                      onPressed: () => onSelectedContact(contact.id),
+                    ),
+                    if (!contact.isMe) ...[
+                      const SizedBox(width: 4),
+                      Tooltip(
+                        message: '引用求救光點名稱聊天',
+                        child: IconButton.filledTonal(
+                          onPressed: () => onQuoteContactName(contact.name),
+                          icon: const Icon(Icons.format_quote, size: 18),
+                          style: IconButton.styleFrom(
+                            fixedSize: const Size(32, 32),
+                            minimumSize: const Size(32, 32),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -1382,6 +1517,8 @@ String _radarMapSignature({
       ..write(':')
       ..write(contact.isMe ? '1' : '0')
       ..write(':')
+      ..write(contact.isSosActive ? '1' : '0')
+      ..write(':')
       ..write(nearbyContactIds.contains(contact.id) ? '1' : '0')
       ..write(':');
     _writeLocationSignature(buffer, contact.location);
@@ -1584,7 +1721,10 @@ class _OfflineHongKongMapState extends State<_OfflineHongKongMap> {
         ? null
         : _districtNameForLocation(widget.location!);
     final activeDistrictName = _selectedDistrictName ?? currentDistrictName;
-    final visibleDistricts = _localizedDistrictsForDistrict(activeDistrictName);
+    final visibleDistricts = _visibleDistrictsForRadar(
+      activeDistrictName: activeDistrictName,
+      contacts: widget.contacts,
+    );
     final mapBounds =
         _mapBoundsForDistricts(visibleDistricts) ?? _MapBounds.hongKong;
     final mapScopeKey = visibleDistricts.isEmpty
@@ -1856,6 +1996,7 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
       'lng': contact.location.longitude,
       'accuracyMeters': contact.location.accuracyMeters,
       'isMe': contact.isMe,
+      'isSosActive': contact.isSosActive,
       'isNearby': widget.nearbyContactIds.contains(contact.id),
       'district': _districtNameForLocation(contact.location),
     };
@@ -1869,6 +2010,7 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
       'lng': location.longitude,
       'accuracyMeters': location.accuracyMeters,
       'isMe': true,
+      'isSosActive': false,
       'isNearby': false,
       'district': _districtNameForLocation(location),
     };
@@ -2274,24 +2416,31 @@ String _googleRadarMapHtml({
     function markerOptions(contact, position) {
       const isMe = contact.isMe === true;
       const isNearby = contact.isNearby === true;
+      const isSosActive = contact.isSosActive === true;
       return {
         map,
         position,
-        title: String(contact.name || '光點'),
-        label: isMe
+        title: isSosActive
+          ? '求救 · ' + String(contact.name || '光點')
+          : String(contact.name || '光點'),
+        label: isSosActive
+          ? { text: 'SOS', color: '#ffffff', fontWeight: '900' }
+          : isMe
           ? { text: '我', color: '#ffffff', fontWeight: '800' }
           : isNearby
             ? { text: '近', color: '#ffffff', fontWeight: '800' }
             : null,
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
-          scale: isMe ? 12 : 9,
-          fillColor: isMe ? '#0d7c66' : isNearby ? '#d73535' : '#1f6feb',
+          scale: isSosActive ? 13 : isMe ? 12 : 9,
+          fillColor: isSosActive
+            ? '#b00020'
+            : isMe ? '#0d7c66' : isNearby ? '#d73535' : '#1f6feb',
           fillOpacity: 1,
-          strokeColor: '#ffffff',
-          strokeWeight: 3
+          strokeColor: isSosActive ? '#ffdad6' : '#ffffff',
+          strokeWeight: isSosActive ? 4 : 3
         },
-        zIndex: isMe ? 20 : isNearby ? 15 : 10
+        zIndex: isSosActive ? 30 : isMe ? 20 : isNearby ? 15 : 10
       };
     }
 
@@ -2352,6 +2501,7 @@ String _googleRadarMapHtml({
         return;
       }
       const name = String(contact.name || '光點');
+      const isSosActive = contact.isSosActive === true;
       const district = contact.district ? String(contact.district) : '未知區域';
       const accuracy = Math.round(Number(contact.accuracyMeters || 0));
       const meta = accuracy > 0
@@ -2369,7 +2519,10 @@ String _googleRadarMapHtml({
 
       const title = document.createElement('div');
       title.className = 'info-title';
-      title.textContent = name;
+      title.textContent = isSosActive ? '求救 · ' + name : name;
+      if (isSosActive) {
+        title.style.color = '#b00020';
+      }
 
       const metaLine = document.createElement('div');
       metaLine.className = 'info-meta';
@@ -2705,6 +2858,9 @@ class _HongKongMapPainter extends CustomPainter {
   void _drawContacts(Canvas canvas, Rect rect, List<RadarContact> contacts) {
     final sorted = contacts.toList()
       ..sort((a, b) {
+        if (a.isSosActive != b.isSosActive) {
+          return a.isSosActive ? 1 : -1;
+        }
         if (a.isMe == b.isMe) {
           return a.name.compareTo(b.name);
         }
@@ -2735,6 +2891,7 @@ class _HongKongMapPainter extends CustomPainter {
       rect,
       contact.location,
       isMe: contact.isMe,
+      isSosActive: contact.isSosActive,
       isNearby: isNearby,
       isSelected: isSelected,
       accuracyMeters: contact.location.accuracyMeters,
@@ -2746,6 +2903,7 @@ class _HongKongMapPainter extends CustomPainter {
     Rect rect,
     DeviceLocation location, {
     required bool isMe,
+    bool isSosActive = false,
     bool isNearby = false,
     bool isSelected = false,
     required double accuracyMeters,
@@ -2756,13 +2914,17 @@ class _HongKongMapPainter extends CustomPainter {
     );
     final accuracyRadius = max(10.0, min(44.0, accuracyMeters / 20));
     final accuracyPaint = Paint()
-      ..color = isMe
+      ..color = isSosActive
+          ? const Color(0x55FF3B30)
+          : isMe
           ? const Color(0x3341B6E6)
           : isNearby
           ? const Color(0x66FF3B30)
           : const Color(0x33FF6B6B);
     final ringPaint = Paint()
-      ..color = isMe
+      ..color = isSosActive
+          ? const Color(0xFFB00020)
+          : isMe
           ? const Color(0xFF0D7C66)
           : isNearby
           ? const Color(0xFFFF3B30)
@@ -2770,11 +2932,15 @@ class _HongKongMapPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = isSelected
           ? 4
+          : isSosActive
+          ? 3.5
           : isNearby
           ? 3
           : 2;
     final dotPaint = Paint()
-      ..color = isMe
+      ..color = isSosActive
+          ? const Color(0xFFFFDAD6)
+          : isMe
           ? const Color(0xFFFFC857)
           : isNearby
           ? const Color(0xFFFFF0A6)
@@ -2785,6 +2951,8 @@ class _HongKongMapPainter extends CustomPainter {
       visiblePoint,
       isSelected
           ? 14
+          : isSosActive
+          ? 13
           : isNearby
           ? 11
           : 8,
@@ -2794,11 +2962,41 @@ class _HongKongMapPainter extends CustomPainter {
       visiblePoint,
       isSelected
           ? 7
+          : isSosActive
+          ? 6.5
           : isNearby
           ? 6
           : 4.5,
       dotPaint,
     );
+    if (isSosActive) {
+      final labelPainter = TextPainter(
+        text: TextSpan(
+          text: 'SOS',
+          style: TextStyle(
+            color: const Color(0xFFB00020),
+            fontSize: textScaler.scale(9),
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final labelOffset = Offset(
+        visiblePoint.dx - labelPainter.width / 2,
+        visiblePoint.dy + 15,
+      );
+      final labelRect = Rect.fromLTWH(
+        labelOffset.dx - 4,
+        labelOffset.dy - 2,
+        labelPainter.width + 8,
+        labelPainter.height + 4,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(labelRect, const Radius.circular(5)),
+        Paint()..color = const Color(0xEEFFFFFF),
+      );
+      labelPainter.paint(canvas, labelOffset);
+    }
   }
 
   void _drawSelectedContactLabel(Canvas canvas, Rect rect) {
@@ -2820,9 +3018,10 @@ class _HongKongMapPainter extends CustomPainter {
       rect,
     );
     final districtName = _districtNameForLocation(selectedContact.location);
-    final label = districtName == null
-        ? selectedContact.name
-        : '${selectedContact.name} · $districtName';
+    final name = selectedContact.isSosActive
+        ? '求救 · ${selectedContact.name}'
+        : selectedContact.name;
+    final label = districtName == null ? name : '$name · $districtName';
 
     _drawLocationLabel(
       canvas,
@@ -2830,6 +3029,7 @@ class _HongKongMapPainter extends CustomPainter {
       visiblePoint,
       label,
       isMe: selectedContact.isMe,
+      isSosActive: selectedContact.isSosActive,
       isNearby: nearbyContactIds.contains(selectedContact.id),
     );
   }
@@ -2854,6 +3054,7 @@ class _HongKongMapPainter extends CustomPainter {
     Offset point,
     String label, {
     required bool isMe,
+    bool isSosActive = false,
     bool isNearby = false,
   }) {
     final textPainter = TextPainter(
@@ -2878,7 +3079,9 @@ class _HongKongMapPainter extends CustomPainter {
       const Radius.circular(8),
     );
     final bubblePaint = Paint()
-      ..color = isMe
+      ..color = isSosActive
+          ? const Color(0xFFB00020)
+          : isMe
           ? const Color(0xFF17211E)
           : isNearby
           ? const Color(0xFFB00020)
@@ -3294,6 +3497,35 @@ List<_DistrictShape> _localizedDistrictsForDistrict(String? districtName) {
     });
 
   return List.unmodifiable(districts.take(3));
+}
+
+List<_DistrictShape> _visibleDistrictsForRadar({
+  required String? activeDistrictName,
+  required List<RadarContact> contacts,
+}) {
+  final districts = <_DistrictShape>[
+    ..._localizedDistrictsForDistrict(activeDistrictName),
+  ];
+  final seenDistrictNames = districts.map((district) => district.name).toSet();
+
+  for (final contact in contacts.where((contact) => contact.isSosActive)) {
+    final districtName = _districtNameForLocation(contact.location);
+    if (districtName == null || seenDistrictNames.contains(districtName)) {
+      continue;
+    }
+    final district = _districtByName(districtName);
+    if (district == null) {
+      continue;
+    }
+    districts.add(district);
+    seenDistrictNames.add(district.name);
+  }
+
+  if (districts.isEmpty && contacts.any((contact) => contact.isSosActive)) {
+    return _HongKongMapPainter._districts;
+  }
+
+  return List.unmodifiable(districts);
 }
 
 _MapBounds? _mapBoundsForDistricts(List<_DistrictShape> districts) {
@@ -4966,6 +5198,7 @@ class _OnlineUsersStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final onlineCount = users.length;
+    final sosCount = users.where((user) => user.isSosActive).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4987,6 +5220,22 @@ class _OnlineUsersStrip extends StatelessWidget {
                 context,
               ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756D)),
             ),
+            if (sosCount > 0) ...[
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.warning_amber,
+                size: 16,
+                color: Color(0xFFB00020),
+              ),
+              const SizedBox(width: 3),
+              Text(
+                '求救 $sosCount',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFFB00020),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
             const Spacer(),
             TextButton.icon(
               key: const ValueKey('online-user-list-button'),
@@ -5013,13 +5262,20 @@ class _OnlineUsersStrip extends StatelessWidget {
             itemBuilder: (context, index) {
               final user = users[index];
               final label = user.isMe ? '${user.name}（你）' : user.name;
+              final isSosActive = user.isSosActive;
               return DecoratedBox(
                 decoration: BoxDecoration(
-                  color: user.isMe
+                  color: isSosActive
+                      ? const Color(0xFFFFEEE9)
+                      : user.isMe
                       ? const Color(0xFFE0F2E9)
                       : const Color(0xFFFAFBF7),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFD7DED7)),
+                  border: Border.all(
+                    color: isSosActive
+                        ? const Color(0xFFE0B8AE)
+                        : const Color(0xFFD7DED7),
+                  ),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.only(left: 6, right: 4),
@@ -5029,13 +5285,18 @@ class _OnlineUsersStrip extends StatelessWidget {
                       ActionChip(
                         key: ValueKey(user.isMe ? 'online-user-me' : user.id),
                         avatar: Icon(
-                          user.isMe
+                          isSosActive
+                              ? Icons.warning_amber
+                              : user.isMe
                               ? Icons.person_pin_circle
                               : Icons.person_outline,
                           size: 16,
+                          color: isSosActive ? const Color(0xFFB00020) : null,
                         ),
                         label: Text(
-                          '$label · 信用 ${user.creditScore}',
+                          isSosActive
+                              ? '$label · 求救 · 信用 ${user.creditScore}'
+                              : '$label · 信用 ${user.creditScore}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -5209,18 +5470,27 @@ class _OnlineUserListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = user.isMe ? '${user.name}（你）' : user.name;
+    final isSosActive = user.isSosActive;
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: CircleAvatar(
         radius: 18,
-        backgroundColor: user.isMe
+        backgroundColor: isSosActive
+            ? const Color(0xFFFFEEE9)
+            : user.isMe
             ? const Color(0xFFE0F2E9)
             : const Color(0xFFFAFBF7),
         child: Icon(
-          user.isMe ? Icons.person_pin_circle : Icons.person_outline,
+          isSosActive
+              ? Icons.warning_amber
+              : user.isMe
+              ? Icons.person_pin_circle
+              : Icons.person_outline,
           size: 18,
-          color: const Color(0xFF0D7C66),
+          color: isSosActive
+              ? const Color(0xFFB00020)
+              : const Color(0xFF0D7C66),
         ),
       ),
       title: Text(
@@ -5230,7 +5500,9 @@ class _OnlineUserListTile extends StatelessWidget {
         style: const TextStyle(fontWeight: FontWeight.w800),
       ),
       subtitle: Text(
-        '信用 ${user.creditScore}',
+        isSosActive
+            ? '求救光點 · 信用 ${user.creditScore}'
+            : '信用 ${user.creditScore}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -6050,6 +6322,7 @@ class RadarContact {
     required this.name,
     required this.location,
     required this.isMe,
+    required this.isSosActive,
     required this.lastSeen,
   });
 
@@ -6057,6 +6330,7 @@ class RadarContact {
   final String name;
   final DeviceLocation location;
   final bool isMe;
+  final bool isSosActive;
   final DateTime lastSeen;
 
   double distanceFrom(DeviceLocation other) {
@@ -6274,6 +6548,22 @@ int _intValue(Object? value) {
   return 0;
 }
 
+bool? _optionalBoolValue(Object? value) {
+  if (value is bool) {
+    return value;
+  }
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized == 'true') {
+      return true;
+    }
+    if (normalized == 'false') {
+      return false;
+    }
+  }
+  return null;
+}
+
 String _cleanQuotedString(String value) {
   if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
     return value.substring(1, value.length - 1);
@@ -6350,6 +6640,7 @@ class MeshChatService extends ChangeNotifier {
   String _activeRoomId = _defaultRoomId;
   bool _isRunning = false;
   bool _disposed = false;
+  bool _sosActive = false;
   String _status = _onlineRelayUrl.isEmpty ? '正在準備離線 mesh 節點。' : '正在準備線上光之網絡。';
   List<String> _localAddresses = <String>[];
 
@@ -6363,6 +6654,7 @@ class MeshChatService extends ChangeNotifier {
   String get status => _status;
   List<String> get localAddresses => List.unmodifiable(_localAddresses);
   DeviceLocation? get myLocation => _myLocation;
+  bool get sosActive => _sosActive;
 
   List<RadarContact> get radarContacts {
     final now = DateTime.now();
@@ -6373,6 +6665,7 @@ class MeshChatService extends ChangeNotifier {
           name: _displayName,
           location: _myLocation!,
           isMe: true,
+          isSosActive: _sosActive,
           lastSeen: now,
         ),
       ..._peerLocations.values.where(
@@ -6448,6 +6741,7 @@ class MeshChatService extends ChangeNotifier {
         lastSeen: DateTime.now(),
         creditScore: creditScoreFor(_nodeId),
         likedByMe: false,
+        isSosActive: _sosActive,
       ),
       ...peers.map(
         (peer) => MeshOnlineUser(
@@ -6457,6 +6751,7 @@ class MeshChatService extends ChangeNotifier {
           lastSeen: peer.lastSeen,
           creditScore: creditScoreFor(peer.id),
           likedByMe: hasLikedUser(peer.id),
+          isSosActive: peer.sosActive,
         ),
       ),
     ];
@@ -7082,6 +7377,24 @@ class MeshChatService extends ChangeNotifier {
     }
   }
 
+  void setSosActive(bool active) {
+    if (_sosActive == active) {
+      return;
+    }
+
+    _sosActive = active;
+    _status = active ? 'SOS 燈已啟動，正在顯示求救光點。' : 'SOS 燈已停止。';
+    notifyListeners();
+
+    final location = _myLocation;
+    if (location != null) {
+      unawaited(_sendLocalPacket(_locationPacket()));
+    } else {
+      unawaited(refreshNetworkPresence());
+    }
+    _announcePresenceBurst();
+  }
+
   Future<void> sendMessage(String text) async {
     final clean = text.trim();
     if (clean.isEmpty) {
@@ -7256,7 +7569,14 @@ class MeshChatService extends ChangeNotifier {
 
     final peerName = _stringValue(packet['name']) ?? '未命名節點';
     final peerPort = _intValue(packet['tcpPort']) ?? tcpPort;
-    _rememberPeer(id: peerId, name: peerName, host: remoteHost, port: peerPort);
+    final sosActive = _optionalBoolValue(packet['sosActive']);
+    _rememberPeer(
+      id: peerId,
+      name: peerName,
+      host: remoteHost,
+      port: peerPort,
+      sosActive: sosActive,
+    );
     _rememberRoomsFromList(packet['rooms']);
     _rememberSuppliesFromList(packet['supplies']);
     _rememberCreditVotesFromList(packet['creditVotes']);
@@ -7264,6 +7584,7 @@ class MeshChatService extends ChangeNotifier {
       id: peerId,
       name: peerName,
       value: packet['location'],
+      isSosActive: sosActive,
     );
 
     if (fromOnline) {
@@ -7298,6 +7619,7 @@ class MeshChatService extends ChangeNotifier {
         name: senderName,
         host: remoteHost,
         port: senderPort,
+        sosActive: _optionalBoolValue(packet['sosActive']),
       );
     }
 
@@ -7343,6 +7665,7 @@ class MeshChatService extends ChangeNotifier {
       name: senderName,
       host: remoteHost,
       port: peerPort,
+      sosActive: _optionalBoolValue(packet['sosActive']),
     );
 
     if (!_seenMessageIds.add(messageId)) {
@@ -7417,13 +7740,20 @@ class MeshChatService extends ChangeNotifier {
       name: senderName,
       host: remoteHost,
       port: peerPort,
+      sosActive: _optionalBoolValue(packet['sosActive']),
       notify: false,
     );
+    final sosActive =
+        _optionalBoolValue(packet['sosActive']) ??
+        _peers[senderId]?.sosActive ??
+        _peerLocations[senderId]?.isSosActive ??
+        false;
     _peerLocations[senderId] = RadarContact(
       id: senderId,
       name: senderName,
       location: location,
       isMe: false,
+      isSosActive: sosActive,
       lastSeen: DateTime.now(),
     );
     notifyListeners();
@@ -7581,6 +7911,7 @@ class MeshChatService extends ChangeNotifier {
       'nodeId': _nodeId,
       'name': _displayName,
       'tcpPort': tcpPort,
+      'sosActive': _sosActive,
       'sentAt': DateTime.now().toUtc().toIso8601String(),
       'site': 'AIECO.HK',
       'rooms': rooms.map((room) => room.toMap()).toList(),
@@ -7597,6 +7928,7 @@ class MeshChatService extends ChangeNotifier {
       'nodeId': _nodeId,
       'name': _displayName,
       'tcpPort': tcpPort,
+      'sosActive': false,
       'sentAt': DateTime.now().toUtc().toIso8601String(),
       'site': 'AIECO.HK',
     };
@@ -7610,6 +7942,7 @@ class MeshChatService extends ChangeNotifier {
       'senderId': _nodeId,
       'senderName': _displayName,
       'tcpPort': tcpPort,
+      'sosActive': _sosActive,
       'hops': hops,
       'sentAt': DateTime.now().toUtc().toIso8601String(),
       if (location != null) ...location.toMap(),
@@ -7809,6 +8142,7 @@ class MeshChatService extends ChangeNotifier {
     required String name,
     required String host,
     required int port,
+    bool? sosActive,
     bool notify = true,
   }) {
     if (id == _nodeId) {
@@ -7835,6 +8169,7 @@ class MeshChatService extends ChangeNotifier {
         name: name,
         host: host,
         port: port,
+        sosActive: sosActive ?? false,
         lastSeen: DateTime.now(),
       );
     } else {
@@ -7842,7 +8177,21 @@ class MeshChatService extends ChangeNotifier {
         ..name = name
         ..host = host
         ..port = port
+        ..sosActive = sosActive ?? existing.sosActive
         ..lastSeen = DateTime.now();
+    }
+    if (sosActive != null) {
+      final existingContact = _peerLocations[id];
+      if (existingContact != null && existingContact.isSosActive != sosActive) {
+        _peerLocations[id] = RadarContact(
+          id: existingContact.id,
+          name: name,
+          location: existingContact.location,
+          isMe: existingContact.isMe,
+          isSosActive: sosActive,
+          lastSeen: existingContact.lastSeen,
+        );
+      }
     }
 
     if (notify) {
@@ -7982,6 +8331,7 @@ class MeshChatService extends ChangeNotifier {
     required String id,
     required String name,
     required Object? value,
+    bool? isSosActive,
   }) {
     if (id == _nodeId || value is! Map) {
       return;
@@ -7992,8 +8342,10 @@ class MeshChatService extends ChangeNotifier {
       return;
     }
     final existingContact = _peerLocations[id];
+    final nextSosActive = isSosActive ?? existingContact?.isSosActive ?? false;
     if (existingContact != null &&
-        !_shouldReplaceLocation(existingContact.location, location)) {
+        !_shouldReplaceLocation(existingContact.location, location) &&
+        existingContact.isSosActive == nextSosActive) {
       return;
     }
 
@@ -8002,6 +8354,7 @@ class MeshChatService extends ChangeNotifier {
       name: name,
       location: location,
       isMe: false,
+      isSosActive: nextSosActive,
       lastSeen: DateTime.now(),
     );
     notifyListeners();
@@ -8155,6 +8508,7 @@ class MeshOnlineUser {
     required this.lastSeen,
     required this.creditScore,
     required this.likedByMe,
+    required this.isSosActive,
   });
 
   final String id;
@@ -8163,6 +8517,7 @@ class MeshOnlineUser {
   final DateTime lastSeen;
   final int creditScore;
   final bool likedByMe;
+  final bool isSosActive;
 }
 
 class MeshSupply {
@@ -8417,6 +8772,7 @@ class MeshPeer {
     required this.name,
     required this.host,
     required this.port,
+    required this.sosActive,
     required this.lastSeen,
   });
 
@@ -8424,6 +8780,7 @@ class MeshPeer {
   String name;
   String host;
   int port;
+  bool sosActive;
   DateTime lastSeen;
 
   bool get isOnline => host.startsWith('online:');

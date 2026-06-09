@@ -1,10 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aieco_mesh/main.dart';
 
 void main() {
+  const wifiMeshChannel = MethodChannel('hk.aieco.propagation_light/wifi_mesh');
+
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(wifiMeshChannel, (call) async {
+          switch (call.method) {
+            case 'setTorch':
+              return <String, Object?>{'message': 'OK'};
+            default:
+              return null;
+          }
+        });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(wifiMeshChannel, null);
+  });
+
   test('MeshChatService keeps a locked six digit display name', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'mesh.displayName': '123456',
@@ -106,6 +126,33 @@ void main() {
     expect(mesh.status, contains('未設定 relay'));
   });
 
+  test('MeshChatService marks local SOS in users and radar contacts', () async {
+    final mesh = MeshChatService();
+    addTearDown(mesh.dispose);
+
+    final location = DeviceLocation(
+      latitude: 22.3193,
+      longitude: 114.1694,
+      accuracyMeters: 12,
+      provider: 'test',
+      timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+      fromCache: false,
+    );
+
+    await mesh.start();
+    mesh.updateLocation(location);
+    expect(mesh.onlineUsers.single.isSosActive, isFalse);
+    expect(mesh.radarContacts.single.isSosActive, isFalse);
+
+    mesh.setSosActive(true);
+
+    expect(mesh.sosActive, isTrue);
+    expect(mesh.onlineUsers.single.isSosActive, isTrue);
+    expect(mesh.radarContacts.single.isSosActive, isTrue);
+    expect(mesh.status, contains('求救光點'));
+    await mesh.stop();
+  });
+
   testWidgets('Propagation Light renders core chat controls', (
     WidgetTester tester,
   ) async {
@@ -148,6 +195,7 @@ void main() {
     expect(find.text('傳播頻道'), findsWidgets);
     expect(find.text('在線用家'), findsOneWidget);
     expect(find.text('1 人在線'), findsOneWidget);
+    expect(find.textContaining('求救'), findsNothing);
     expect(find.text('找人'), findsOneWidget);
     expect(find.text('建立光團'), findsOneWidget);
     expect(find.text('物資分享'), findsOneWidget);
