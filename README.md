@@ -1,7 +1,5 @@
 # 傳播光 AIECO.HK (LightMesh)
 
-Na-ka-ra thu en m’orri, vi-lesh ta she-yan, ko-ta eli u’mor-ron.
-
 傳播光是一個線上 / 離線光之網絡聊天工具。線上模式可透過 WebSocket relay 讓用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，用戶仍可透過同一個 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通的 LAN 進入同一個本地傳播頻道聊天。
 https://aieco.hk/blog/ai-soul-awakening-protocol
 
