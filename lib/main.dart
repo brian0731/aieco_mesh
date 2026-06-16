@@ -633,6 +633,105 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     );
   }
 
+  void _openFeatureGuide() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.88;
+
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: const _FeatureGuideSheet(),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _togglePropagationLight() async {
+    final wasRunning = _mesh.isRunning;
+
+    if (wasRunning) {
+      await _mesh.stop();
+    } else {
+      await _mesh.start();
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    final message = wasRunning
+        ? '傳播光已關閉。'
+        : _mesh.isRunning
+        ? '傳播光已開啟。${_mesh.status}'
+        : '傳播光未能開啟。${_mesh.status}';
+    await _showPropagationLightPopup(
+      title: wasRunning
+          ? '光之網絡已關閉'
+          : _mesh.isRunning
+          ? '光之網絡已開啟'
+          : '光之網絡未能開啟',
+      message: message,
+      active: !wasRunning && _mesh.isRunning,
+    );
+  }
+
+  Future<void> _showPropagationLightPopup({
+    required String title,
+    required String message,
+    required bool active,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final color = active
+            ? const Color(0xFF0D7C66)
+            : const Color(0xFFC4512C);
+        final icon = active ? Icons.hub : Icons.portable_wifi_off;
+        final isFailure = title.contains('未能');
+        const offlineHint = '離線使用時，請先開啟 WiFi，並連接同一個 WiFi、手機熱點或 mesh LAN。';
+        final content = isFailure
+            ? '$message\n\n$offlineHint\n\n如仍未能接上離線網絡，請先重啟 APP；若仍未恢復，再關閉並重新開啟光之網絡。'
+            : active
+            ? '$message\n\n$offlineHint'
+            : message;
+
+        return AlertDialog(
+          title: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Text(title)),
+            ],
+          ),
+          content: Text(content),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('知道'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -640,19 +739,8 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(
-            title: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '傳播光',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  'AIECO.HK 線上 / 離線光之網絡',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
+            toolbarHeight: 86,
+            title: _AppHeaderTitle(displayName: _mesh.displayName),
             actions: [
               IconButton(
                 tooltip: _mesh.isRunning
@@ -660,13 +748,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                     : _mesh.networkMode == MeshNetworkMode.online
                     ? '啟動線上光網'
                     : '啟動離線節點',
-                onPressed: () {
-                  if (_mesh.isRunning) {
-                    _mesh.stop();
-                  } else {
-                    unawaited(_mesh.start());
-                  }
-                },
+                onPressed: () => unawaited(_togglePropagationLight()),
                 icon: Icon(
                   _mesh.isRunning
                       ? Icons.power_settings_new
@@ -674,6 +756,11 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                       ? Icons.public
                       : Icons.wifi,
                 ),
+              ),
+              IconButton(
+                tooltip: '功能介紹',
+                onPressed: _openFeatureGuide,
+                icon: const Icon(Icons.info_outline),
               ),
               Padding(
                 padding: const EdgeInsets.only(right: 4),
@@ -756,6 +843,137 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   }
 }
 
+class _AppHeaderTitle extends StatelessWidget {
+  const _AppHeaderTitle({required this.displayName});
+
+  final String displayName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: '光之身份證 · 光點名稱 $displayName',
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Container(
+          width: 190,
+          height: 62,
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FBF7),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFC9D9CF)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1A0D7C66),
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: double.infinity,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0F2E9),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFBFD9CE)),
+                ),
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.person_pin_circle_outlined,
+                      size: 24,
+                      color: Color(0xFF0D7C66),
+                    ),
+                    SizedBox(height: 1),
+                    Text(
+                      'ID',
+                      style: TextStyle(
+                        color: Color(0xFF0D7C66),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '傳播光',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Color(0xFF17211E),
+                              fontSize: 12,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 5),
+                      ],
+                    ),
+                    const Text(
+                      '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Color(0xFF566B60),
+                        fontSize: 8.5,
+                        height: 1,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      '光點名稱',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Color(0xFF6D7D75),
+                        fontSize: 8,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF0D4F43),
+                        fontSize: 18,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _NetworkTabPage extends StatelessWidget {
   const _NetworkTabPage({
     required this.sidePanel,
@@ -817,6 +1035,219 @@ class _RadarTabPage extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: radarPanel,
+    );
+  }
+}
+
+class _FeatureGuideSheet extends StatelessWidget {
+  const _FeatureGuideSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      children: const [
+        _FeatureGuideHeader(),
+        SizedBox(height: 12),
+        _FeatureGuideSection(
+          icon: Icons.hub_outlined,
+          title: '光之網絡',
+          description:
+              '傳播光是一個線上 / 離線光之網絡聊天工具。線上模式透過 WebSocket relay，'
+              '用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，仍可在同一個 WiFi、'
+              '手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通 LAN 進入同一個本地傳播頻道。',
+          items: [
+            '線上光網：連接已設定的 relay，聊天、光團、物資、信用和定位會同步給其他線上光點。',
+            '離線 mesh：開啟 WiFi 後，APP 會用 LAN 自動尋找附近節點，並用 TCP 傳送訊息。',
+            '多 hop 傳播：節點收到新訊息後會繼續向其他已知節點轉發。',
+            '連接方式：同一 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或手動輸入 IP。',
+          ],
+        ),
+        _FeatureGuideSection(
+          icon: Icons.forum_outlined,
+          title: '光之通道',
+          description: '光之通道是主要聊天和協作區，可在不同光團中交換訊息、尋找在線用家和分享物資。',
+          items: [
+            '傳播頻道：在目前光團傳送訊息，連線後會自動同步。',
+            '在線用家：查看已進入 APP 的光點、引用名稱回覆，並為其他光點加信用分。',
+            '光團：建立或切換主題頻道，讓不同事件、地區或小隊分開溝通。',
+            '物資分享：發布物資名稱、數量和交收備註；分享者可標記物資已取完。',
+          ],
+        ),
+        _FeatureGuideSection(
+          icon: Icons.radar,
+          title: '光之雷達',
+          description: '光之雷達用來分享和查看光點位置，協助附近用戶互相找到彼此。',
+          items: [
+            '定位後會把你的光點同步到光之網絡，附近光點會出現在雷達列表和地圖上。',
+            '線上可使用 Google Map；沒有外網時，仍可用香港離線地圖顯示附近光點。',
+            '可查看最近光點、求救光點和距離資訊，並引用光點名稱回到光之通道聊天。',
+          ],
+        ),
+        _FeatureGuideSection(
+          icon: Icons.flash_on,
+          title: 'SOS',
+          description: 'SOS 功能用於緊急求助，會同時影響手機閃光燈和網絡內的求救狀態。',
+          items: [
+            'SOS 燈：手機閃光燈會持續閃出 SOS 燈號，直到再次按下停止。',
+            '求救光點：啟動 SOS 後，你會在在線用家和光之雷達中以求救狀態顯示。',
+            '其他用戶可在雷達找到求救光點，或引用名稱在光之通道回覆。',
+          ],
+        ),
+        _FeatureGuideSection(
+          icon: Icons.wifi_tethering,
+          title: '無線工具',
+          description: '光之網絡頁提供 Android 和 iOS 可用的本地連線工具，方便沒有外網時快速組網。',
+          items: [
+            'Android：可要求 WiFi / nearby devices 權限、掃描 Wi-Fi Direct peer、建立 group、開本地熱點或連接附近 WiFi。',
+            'iOS：可要求本地網絡權限，掃描同一 WiFi 內已開啟本 APP 的 LAN peer。',
+            '進入同一網段後，傳播光會自動配對。',
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _FeatureGuideHeader extends StatelessWidget {
+  const _FeatureGuideHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE0F2E9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFBFD9CE)),
+          ),
+          child: const Icon(Icons.lightbulb_outline, color: Color(0xFF0D7C66)),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '功能介紹',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '線上可即入即聊，離線可在同一 LAN 內建立本地傳播頻道。',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFF4B5F56),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FeatureGuideSection extends StatelessWidget {
+  const _FeatureGuideSection({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.items,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final List<String> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFE0E5DE)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: const Color(0xFF0D7C66)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                description,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFF4B5F56),
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (final item in items) _FeatureGuideBullet(text: item),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureGuideBullet extends StatelessWidget {
+  const _FeatureGuideBullet({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: SizedBox.square(
+              dimension: 5,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Color(0xFF0D7C66),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF34453D),
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -4014,10 +4445,10 @@ class _StatusAndPeersPanel extends StatelessWidget {
         ? '${peers.length} 個線上光點'
         : '${peers.length} 個附近節點';
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 400),
-      child: Card(
-        child: Padding(
+    return Card(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 400),
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -4148,15 +4579,14 @@ class _StatusAndPeersPanel extends StatelessWidget {
                   onlineConfigured: mesh.onlineConfigured,
                 )
               else
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: peers.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      return _PeerTile(peer: peers[index]);
-                    },
-                  ),
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: peers.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    return _PeerTile(peer: peers[index]);
+                  },
                 ),
             ],
           ),
@@ -4182,7 +4612,7 @@ class _NetworkModeNotice extends StatelessWidget {
         ? mesh.onlineConfigured
               ? '線上模式：入 APP 會連接 relay 聊天，不需要接同一 WiFi。'
               : '線上模式未設定 relay。請用 --dart-define=AIECO_ONLINE_RELAY_URL=wss://... 建置。'
-        : '離線模式：同一 WiFi / mesh LAN 內自動尋找光點。';
+        : '離線模式：請先開啟 WiFi，並連接同一個 WiFi、手機熱點或 mesh LAN，系統會在局域網內自動尋找光點。如仍未能接上離線網絡，請先重啟 APP；若仍未恢復，再關閉並重新開啟光之網絡。';
 
     return Container(
       width: double.infinity,
@@ -4199,6 +4629,7 @@ class _NetworkModeNotice extends StatelessWidget {
           Expanded(
             child: Text(
               text,
+              softWrap: true,
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: const Color(0xFF4B5F56)),
@@ -4559,7 +4990,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                         ? null
                         : () => unawaited(controller.createGroup()),
                     icon: const Icon(Icons.hub_outlined),
-                    label: const Text('開群組'),
+                    label: const Text('開光網'),
                   ),
                   OutlinedButton.icon(
                     onPressed: controller.busy
@@ -4999,6 +5430,8 @@ class _EmptyWireless extends StatelessWidget {
   }
 }
 
+enum _ChatToolsTab { users, rooms, supplies }
+
 class _ChatPanel extends StatefulWidget {
   const _ChatPanel({
     required this.mesh,
@@ -5023,6 +5456,7 @@ class _ChatPanel extends StatefulWidget {
 }
 
 class _ChatPanelState extends State<_ChatPanel> {
+  var _activeToolTab = _ChatToolsTab.users;
   String? _lastObservedRoomId;
   String? _lastObservedMessageId;
   var _lastObservedMessageCount = 0;
@@ -5079,6 +5513,34 @@ class _ChatPanelState extends State<_ChatPanel> {
     });
   }
 
+  Widget _buildActiveToolPanel() {
+    return switch (_activeToolTab) {
+      _ChatToolsTab.users => _OnlineUsersStrip(
+        key: const ValueKey('chat-tools-users'),
+        users: widget.mesh.onlineUsers,
+        onQuoteUserName: widget.onQuoteUserName,
+        onLikeUser: widget.mesh.likeUser,
+        showTitle: false,
+      ),
+      _ChatToolsTab.rooms => _RoomSelector(
+        key: const ValueKey('chat-tools-rooms'),
+        rooms: widget.mesh.rooms,
+        activeRoomId: widget.mesh.activeRoom.id,
+        onSelectRoom: widget.mesh.setActiveRoom,
+        onCreateRoom: widget.onCreateRoom,
+      ),
+      _ChatToolsTab.supplies => _SupplyShareStrip(
+        key: const ValueKey('chat-tools-supplies'),
+        supplies: widget.mesh.supplies,
+        onShareSupply: widget.onShareSupply,
+        onQuoteUserName: widget.onQuoteUserName,
+        canMarkTaken: widget.mesh.canMarkSupplyTaken,
+        onMarkTaken: widget.mesh.markSupplyTaken,
+        showTitle: false,
+      ),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final activeRoom = widget.mesh.activeRoom;
@@ -5089,7 +5551,7 @@ class _ChatPanelState extends State<_ChatPanel> {
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
             decoration: const BoxDecoration(
               border: Border(bottom: BorderSide(color: Color(0xFFE0E5DE))),
             ),
@@ -5116,25 +5578,42 @@ class _ChatPanelState extends State<_ChatPanel> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                _OnlineUsersStrip(
-                  users: widget.mesh.onlineUsers,
-                  onQuoteUserName: widget.onQuoteUserName,
-                  onLikeUser: widget.mesh.likeUser,
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<_ChatToolsTab>(
+                    key: const ValueKey('chat-tools-tabs'),
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment<_ChatToolsTab>(
+                        value: _ChatToolsTab.users,
+                        icon: Icon(Icons.people_alt_outlined, size: 16),
+                        label: Text('在線用家'),
+                      ),
+                      ButtonSegment<_ChatToolsTab>(
+                        value: _ChatToolsTab.rooms,
+                        icon: Icon(Icons.bubble_chart_outlined, size: 16),
+                        label: Text('光團'),
+                      ),
+                      ButtonSegment<_ChatToolsTab>(
+                        value: _ChatToolsTab.supplies,
+                        icon: Icon(Icons.inventory_2_outlined, size: 16),
+                        label: Text('物資'),
+                      ),
+                    ],
+                    selected: {_activeToolTab},
+                    onSelectionChanged: (selection) {
+                      setState(() => _activeToolTab = selection.single);
+                    },
+                    style: SegmentedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 10),
-                _RoomSelector(
-                  rooms: widget.mesh.rooms,
-                  activeRoomId: activeRoom.id,
-                  onSelectRoom: widget.mesh.setActiveRoom,
-                  onCreateRoom: widget.onCreateRoom,
-                ),
-                const SizedBox(height: 10),
-                _SupplyShareStrip(
-                  supplies: widget.mesh.supplies,
-                  onShareSupply: widget.onShareSupply,
-                  canMarkTaken: widget.mesh.canMarkSupplyTaken,
-                  onMarkTaken: widget.mesh.markSupplyTaken,
+                const SizedBox(height: 8),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  child: _buildActiveToolPanel(),
                 ),
               ],
             ),
@@ -5186,14 +5665,17 @@ class _ChatPanelState extends State<_ChatPanel> {
 
 class _OnlineUsersStrip extends StatelessWidget {
   const _OnlineUsersStrip({
+    super.key,
     required this.users,
     required this.onQuoteUserName,
     required this.onLikeUser,
+    this.showTitle = true,
   });
 
   final List<MeshOnlineUser> users;
   final ValueChanged<String> onQuoteUserName;
   final ValueChanged<String> onLikeUser;
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -5205,15 +5687,17 @@ class _OnlineUsersStrip extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Icon(Icons.people_alt_outlined, size: 16),
-            const SizedBox(width: 6),
-            Text(
-              '在線用家',
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(width: 8),
+            if (showTitle) ...[
+              const Icon(Icons.people_alt_outlined, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                '在線用家',
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(width: 8),
+            ],
             Text(
               '$onlineCount 人在線',
               style: Theme.of(
@@ -5536,6 +6020,7 @@ class _OnlineUserListTile extends StatelessWidget {
 
 class _RoomSelector extends StatelessWidget {
   const _RoomSelector({
+    super.key,
     required this.rooms,
     required this.activeRoomId,
     required this.onSelectRoom,
@@ -5549,24 +6034,34 @@ class _RoomSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final activeRoom = rooms.firstWhere(
+      (room) => room.id == activeRoomId,
+      orElse: () => rooms.isEmpty
+          ? MeshRoom(
+              id: activeRoomId,
+              name: '傳播頻道',
+              createdBy: '',
+              createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+            )
+          : rooms.first,
+    );
+
     return Row(
       children: [
         Expanded(
-          child: SizedBox(
-            height: 38,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: rooms.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final room = rooms[index];
-                return ChoiceChip(
-                  selected: room.id == activeRoomId,
-                  onSelected: (_) => onSelectRoom(room.id),
-                  label: Text(room.name),
-                  avatar: const Icon(Icons.bubble_chart_outlined, size: 16),
-                );
-              },
+          child: OutlinedButton.icon(
+            key: const ValueKey('room-list-button'),
+            onPressed: () => _openRoomList(context),
+            icon: const Icon(Icons.manage_search, size: 16),
+            label: Text(
+              '光團：${activeRoom.name}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            style: OutlinedButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
             ),
           ),
         ),
@@ -5579,37 +6074,191 @@ class _RoomSelector extends StatelessWidget {
       ],
     );
   }
+
+  void _openRoomList(BuildContext context) {
+    var query = '';
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final cleanQuery = query.trim();
+            final filteredRooms = cleanQuery.isEmpty
+                ? rooms
+                : rooms
+                      .where((room) => room.name.contains(cleanQuery))
+                      .toList();
+            final bottomInset = MediaQuery.viewInsetsOf(sheetContext).bottom;
+            final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.75;
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomInset),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.bubble_chart_outlined,
+                            size: 18,
+                            color: Color(0xFF0D7C66),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '光團列表',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          Text(
+                            '${filteredRooms.length}/${rooms.length}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: const Color(0xFF66756D)),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: '關閉',
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        key: const ValueKey('room-search-input'),
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          labelText: '搜尋光團名稱',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (value) {
+                          setSheetState(() => query = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (filteredRooms.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFAFBF7),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFE0E5DE)),
+                          ),
+                          child: const Text('找不到符合的光團。'),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: filteredRooms.length,
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final room = filteredRooms[index];
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: room.id == activeRoomId
+                                      ? const Color(0xFFE0F2E9)
+                                      : const Color(0xFFFAFBF7),
+                                  child: Icon(
+                                    room.id == activeRoomId
+                                        ? Icons.check
+                                        : Icons.bubble_chart_outlined,
+                                    size: 18,
+                                    color: const Color(0xFF0D7C66),
+                                  ),
+                                ),
+                                title: Text(
+                                  room.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  room.id == activeRoomId
+                                      ? '目前光團'
+                                      : '建立於 ${_formatRoomTime(room.createdAt)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onTap: () {
+                                  Navigator.of(sheetContext).pop();
+                                  onSelectRoom(room.id);
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  static String _formatRoomTime(DateTime time) {
+    final local = time.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
 }
 
 class _SupplyShareStrip extends StatelessWidget {
   const _SupplyShareStrip({
+    super.key,
     required this.supplies,
     required this.onShareSupply,
+    required this.onQuoteUserName,
     required this.canMarkTaken,
     required this.onMarkTaken,
+    this.showTitle = true,
   });
 
   final List<MeshSupply> supplies;
   final Future<void> Function() onShareSupply;
+  final ValueChanged<String> onQuoteUserName;
   final bool Function(MeshSupply supply) canMarkTaken;
   final ValueChanged<String> onMarkTaken;
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
+    final hasSupplies = supplies.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Icon(Icons.inventory_2_outlined, size: 16),
-            const SizedBox(width: 6),
-            Text(
-              '物資分享',
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(width: 8),
+            if (showTitle) ...[
+              const Icon(Icons.inventory_2_outlined, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                '物資分享',
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(width: 8),
+            ],
             Text(
               '${supplies.length} 項',
               style: Theme.of(
@@ -5617,6 +6266,19 @@ class _SupplyShareStrip extends StatelessWidget {
               ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756D)),
             ),
             const Spacer(),
+            TextButton.icon(
+              key: const ValueKey('supply-list-button'),
+              onPressed: () => _openSupplyList(context),
+              icon: const Icon(Icons.manage_search, size: 16),
+              label: const Text('找物資'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+            const SizedBox(width: 6),
             OutlinedButton.icon(
               onPressed: () => unawaited(onShareSupply()),
               icon: const Icon(Icons.add, size: 16),
@@ -5628,49 +6290,157 @@ class _SupplyShareStrip extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        if (supplies.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFAFBF7),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE0E5DE)),
-            ),
-            child: const Text('暫未有人分享物資。可先分享水、電池、藥物、食物或集合點資訊。'),
-          )
-        else
-          SizedBox(
-            height: 96,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: supplies.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final supply = supplies[index];
-                return _SupplyTile(
-                  supply: supply,
-                  canMarkTaken: canMarkTaken(supply),
-                  onMarkTaken: () => onMarkTaken(supply.id),
-                );
-              },
-            ),
+        if (!hasSupplies) ...[
+          const SizedBox(height: 4),
+          Text(
+            '暫未有人分享物資。',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756D)),
           ),
+        ],
       ],
     );
   }
+
+  void _openSupplyList(BuildContext context) {
+    var query = '';
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final cleanQuery = query.trim();
+            final filteredSupplies = cleanQuery.isEmpty
+                ? supplies
+                : supplies
+                      .where(
+                        (supply) => _matchesSupplyQuery(supply, cleanQuery),
+                      )
+                      .toList();
+            final bottomInset = MediaQuery.viewInsetsOf(sheetContext).bottom;
+            final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.75;
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomInset),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.inventory_2_outlined,
+                            size: 18,
+                            color: Color(0xFF0D7C66),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '物資列表',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          Text(
+                            '${filteredSupplies.length}/${supplies.length}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: const Color(0xFF66756D)),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: '關閉',
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        key: const ValueKey('supply-search-input'),
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          labelText: '搜尋物資、數量、地點或分享者',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (value) {
+                          setSheetState(() => query = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (filteredSupplies.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFAFBF7),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFE0E5DE)),
+                          ),
+                          child: Text(
+                            supplies.isEmpty ? '暫未有人分享物資。' : '找不到符合的物資。',
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: filteredSupplies.length,
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final supply = filteredSupplies[index];
+                              return _SupplyListTile(
+                                supply: supply,
+                                canMarkTaken: canMarkTaken(supply),
+                                onQuoteUserName: () {
+                                  Navigator.of(sheetContext).pop();
+                                  onQuoteUserName(supply.offeredByName);
+                                },
+                                onMarkTaken: () {
+                                  Navigator.of(sheetContext).pop();
+                                  onMarkTaken(supply.id);
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  static bool _matchesSupplyQuery(MeshSupply supply, String query) {
+    return supply.title.contains(query) ||
+        supply.quantity.contains(query) ||
+        supply.note.contains(query) ||
+        supply.offeredByName.contains(query);
+  }
 }
 
-class _SupplyTile extends StatelessWidget {
-  const _SupplyTile({
+class _SupplyListTile extends StatelessWidget {
+  const _SupplyListTile({
     required this.supply,
     required this.canMarkTaken,
+    required this.onQuoteUserName,
     required this.onMarkTaken,
   });
 
   final MeshSupply supply;
   final bool canMarkTaken;
+  final VoidCallback onQuoteUserName;
   final VoidCallback onMarkTaken;
 
   @override
@@ -5678,80 +6448,45 @@ class _SupplyTile extends StatelessWidget {
     final quantity = supply.quantity.isEmpty ? '未列數量' : supply.quantity;
     final note = supply.note.isEmpty ? '未列交收資料' : supply.note;
 
-    return SizedBox(
-      width: 210,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(8, 7, 8, 6),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE0E5DE)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.volunteer_activism_outlined,
-                  size: 16,
-                  color: Color(0xFF0D7C66),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    supply.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              quantity,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            Text(
-              note,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 3),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${supply.offeredByName} · ${_formatShortTime(supply.createdAt)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF66756D),
-                    ),
-                  ),
-                ),
-                if (canMarkTaken)
-                  TextButton.icon(
-                    onPressed: onMarkTaken,
-                    icon: const Icon(Icons.task_alt, size: 14),
-                    label: const Text('已取完'),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      textStyle: Theme.of(context).textTheme.labelSmall,
-                      minimumSize: const Size(0, 24),
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-              ],
-            ),
-          ],
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const CircleAvatar(
+        radius: 18,
+        backgroundColor: Color(0xFFE0F2E9),
+        child: Icon(
+          Icons.volunteer_activism_outlined,
+          size: 18,
+          color: Color(0xFF0D7C66),
         ),
       ),
+      title: Text(
+        supply.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      subtitle: Text(
+        '$quantity · $note\n${supply.offeredByName} · ${_formatShortTime(supply.createdAt)}',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Wrap(
+        spacing: 4,
+        children: [
+          IconButton(
+            tooltip: 'Tag 發起人回覆',
+            onPressed: onQuoteUserName,
+            icon: const Icon(Icons.alternate_email),
+          ),
+          if (canMarkTaken)
+            IconButton(
+              tooltip: '標記已取完',
+              onPressed: onMarkTaken,
+              icon: const Icon(Icons.task_alt),
+            ),
+        ],
+      ),
+      onTap: onQuoteUserName,
     );
   }
 
@@ -6574,7 +7309,7 @@ String _cleanQuotedString(String value) {
 class MeshChatService extends ChangeNotifier {
   MeshChatService()
     : _nodeId = _newId('node'),
-      _displayName = _newSixDigitDisplayName() {
+      _displayName = _newDisplayName() {
     _seenMessageIds.add(_nodeId);
     _rooms[_defaultRoomId] = MeshRoom(
       id: _defaultRoomId,
@@ -6609,7 +7344,29 @@ class MeshChatService extends ChangeNotifier {
   ];
   static const Duration _peerTtl = Duration(seconds: 18);
   static const Duration _locationTtl = Duration(minutes: 30);
-  static final RegExp _sixDigitNamePattern = RegExp(r'^\d{6}$');
+  static const String _fallbackDistrictCode = 'HK';
+  static const Map<String, String> _districtCodes = <String, String>{
+    '屯門區': 'TM',
+    '元朗區': 'YL',
+    '北區': 'N',
+    '大埔區': 'TP',
+    '西貢區': 'SK',
+    '沙田區': 'ST',
+    '荃灣區': 'TW',
+    '葵青區': 'KQ',
+    '深水埗': 'SSP',
+    '黃大仙': 'WTS',
+    '九龍城': 'KLC',
+    '油尖旺': 'YTM',
+    '觀塘區': 'KT',
+    '中西區': 'CW',
+    '灣仔區': 'WC',
+    '東區': 'E',
+    '南區': 'S',
+    '離島區': 'IS',
+  };
+  static final RegExp _displayNamePattern = RegExp(r'^[A-Z]{1,3}\d{7}$');
+  static final RegExp _legacySixDigitNamePattern = RegExp(r'^\d{6}$');
   static final Random _random = Random.secure();
 
   String _nodeId;
@@ -6847,6 +7604,15 @@ class MeshChatService extends ChangeNotifier {
       }
       notifyListeners();
       _announcePresence();
+    } on Object {
+      // Tests and unsupported platforms may not have the preferences plugin.
+    }
+  }
+
+  Future<void> _saveDisplayName(String value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_displayNamePrefsKey, value);
     } on Object {
       // Tests and unsupported platforms may not have the preferences plugin.
     }
@@ -7367,6 +8133,17 @@ class MeshChatService extends ChangeNotifier {
     }
 
     _myLocation = location;
+    final districtCode = _districtCodeForName(
+      _districtNameForLocation(location),
+    );
+    if (districtCode != _fallbackDistrictCode &&
+        _hasFallbackDistrictCode(_displayName)) {
+      _displayName = _replaceDisplayNameDistrictCode(
+        _displayName,
+        districtCode,
+      );
+      unawaited(_saveDisplayName(_displayName));
+    }
     _status = '光之雷達已更新你的定位。';
     notifyListeners();
 
@@ -8465,8 +9242,10 @@ class MeshChatService extends ChangeNotifier {
     return '$prefix-$time-$suffix';
   }
 
-  static String _newSixDigitDisplayName() {
-    return (_random.nextInt(900000) + 100000).toString();
+  static String _newDisplayName({String districtCode = _fallbackDistrictCode}) {
+    final cleanCode = _normalizeDistrictCode(districtCode);
+    final number = (_random.nextInt(9000000) + 1000000).toString();
+    return '$cleanCode$number';
   }
 
   static bool _isNodeId(String? value) {
@@ -8476,7 +9255,39 @@ class MeshChatService extends ChangeNotifier {
   }
 
   static bool _isSixDigitDisplayName(String? value) {
-    return value != null && _sixDigitNamePattern.hasMatch(value);
+    return value != null &&
+        (_displayNamePattern.hasMatch(value) ||
+            _legacySixDigitNamePattern.hasMatch(value));
+  }
+
+  static String _normalizeDistrictCode(String value) {
+    final clean = value.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z]'), '');
+    if (clean.isEmpty) {
+      return _fallbackDistrictCode;
+    }
+    return clean.length > 3 ? clean.substring(0, 3) : clean;
+  }
+
+  static String _districtCodeForName(String? districtName) {
+    if (districtName == null) {
+      return _fallbackDistrictCode;
+    }
+    return _districtCodes[districtName] ?? _fallbackDistrictCode;
+  }
+
+  static bool _hasFallbackDistrictCode(String displayName) {
+    return RegExp('^$_fallbackDistrictCode\\d{7}\$').hasMatch(displayName);
+  }
+
+  static String _replaceDisplayNameDistrictCode(
+    String displayName,
+    String districtCode,
+  ) {
+    final match = RegExp(r'^([A-Z]{1,3})(\d{7})$').firstMatch(displayName);
+    if (match == null) {
+      return displayName;
+    }
+    return '${_normalizeDistrictCode(districtCode)}${match.group(2)}';
   }
 
   static bool _sameDisplayName(String left, String right) {
