@@ -24,6 +24,7 @@ const Duration _radarTrackingInterval = Duration(seconds: 12);
 const double _radarLocationUpdateThresholdMeters = 8;
 const double _radarAccuracyUpdateThresholdMeters = 20;
 const Duration _wirelessStatusInterval = Duration(seconds: 6);
+const Duration _wifiGroupInterval = Duration(minutes: 5);
 const double _hongKongCenterLatitude = 22.3193;
 const double _hongKongCenterLongitude = 114.1694;
 
@@ -173,6 +174,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   final ScrollController _messagesScrollController = ScrollController();
   Timer? _radarTrackingTimer;
   Timer? _wirelessStatusTimer;
+  Timer? _wifiGroupTimer;
   bool _radarTrackingBusy = false;
   bool _wirelessStatusBusy = false;
   bool _startupPermissionsRequested = false;
@@ -204,6 +206,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       unawaited(_mesh.start());
       unawaited(_wifiMesh.refreshStatus());
       _startWirelessStatusTracking();
+      _startWifiGroupTracking();
       _scheduleAutomaticRadarLocation(delay: const Duration(seconds: 4));
     }
   }
@@ -220,6 +223,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     _tabController.dispose();
     _radarTrackingTimer?.cancel();
     _wirelessStatusTimer?.cancel();
+    _wifiGroupTimer?.cancel();
     _messageController.dispose();
     _messagesScrollController.dispose();
     super.dispose();
@@ -474,6 +478,21 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
         }),
       );
     }
+  }
+
+  void _startWifiGroupTracking() {
+    if (_wifiGroupTimer != null) {
+      return;
+    }
+    _wifiGroupTimer = Timer.periodic(_wifiGroupInterval, (_) {
+      if (!mounted) return;
+      if (_mesh.networkMode != MeshNetworkMode.offline) return;
+      if (_wifiMesh.isIOS) return;
+      if (_wifiMesh.connection?.groupFormed == true) return;
+      if (_wifiMesh.hotspot != null) return;
+      if (_wifiMesh.busy) return;
+      unawaited(_wifiMesh.createGroup());
+    });
   }
 
   void _startWirelessStatusTracking() {
@@ -827,7 +846,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                   children: [
                     _NetworkTabPage(
                       sidePanel: sidePanel,
-                      wifiPanel: wifiPanel,
+                      wifiPanel: _mesh.networkMode == MeshNetworkMode.online ? null : wifiPanel,
                       maxWidth: constraints.maxWidth,
                     ),
                     _ChatTabPage(chatPanel: chatPanel),
@@ -977,12 +996,12 @@ class _AppHeaderTitle extends StatelessWidget {
 class _NetworkTabPage extends StatelessWidget {
   const _NetworkTabPage({
     required this.sidePanel,
-    required this.wifiPanel,
+    this.wifiPanel,
     required this.maxWidth,
   });
 
   final Widget sidePanel;
-  final Widget wifiPanel;
+  final Widget? wifiPanel;
   final double maxWidth;
 
   @override
@@ -995,8 +1014,10 @@ class _NetworkTabPage extends StatelessWidget {
         child: Row(
           children: [
             SizedBox(width: 320, child: sidePanel),
-            const SizedBox(width: 16),
-            Expanded(child: wifiPanel),
+            if (wifiPanel != null) ...[
+              const SizedBox(width: 16),
+              Expanded(child: wifiPanel!),
+            ],
           ],
         ),
       );
@@ -1005,7 +1026,10 @@ class _NetworkTabPage extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
       child: ListView(
-        children: [sidePanel, const SizedBox(height: 12), wifiPanel],
+        children: [
+          sidePanel,
+          if (wifiPanel != null) ...[const SizedBox(height: 12), wifiPanel!],
+        ],
       ),
     );
   }
@@ -4854,14 +4878,6 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
               label: Text(controller.isIOS ? '掃 LAN 並連接' : '掃 P2P 並連接'),
             ),
           ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: canConnectSelected
-                ? () => unawaited(_submitSelectedWifi())
-                : null,
-            icon: const Icon(Icons.login),
-            label: const Text('連接所選'),
-          ),
         ],
       ),
       const SizedBox(height: 10),
@@ -5310,7 +5326,7 @@ class _WifiNetworkTile extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: onSelect,
+          onTap: onConnect,
           borderRadius: BorderRadius.circular(8),
           child: Container(
             padding: const EdgeInsets.all(10),

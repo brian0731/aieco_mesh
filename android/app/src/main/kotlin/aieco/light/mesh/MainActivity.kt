@@ -17,6 +17,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -69,6 +70,20 @@ class MainActivity : FlutterActivity() {
             bridge = WifiMeshBridge(this)
         }
         bridge.register()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::bridge.isInitialized) {
+            bridge.onResume()
+        }
+    }
+
+    override fun onPause() {
+        if (::bridge.isInitialized) {
+            bridge.onPause()
+        }
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -126,10 +141,17 @@ private class WifiMeshBridge(private val activity: Activity) {
     private var hotspotInfo: Map<String, Any?>? = null
     private var hotspotStarting = false
     private var hotspotRequestId = 0
+    private var wifiDirectNetwork: Network? = null
     private var localNetwork: Network? = null
     private var bluetoothNetwork: Network? = null
     private var networkGeneration = 0L
     private var receiverRegistered = false
+    private var foregroundActive = false
+    private var lastInviteListenAt = 0L
+    private var wifiP2pEnabled = p2pManager != null
+    private var p2pOperationBusy = false
+    private var lastP2pOperationAt = 0L
+    private var preferBluetoothNetwork = false
     private var pendingLocationResult: MethodChannel.Result? = null
     private var torchCameraId: String? = null
 
@@ -143,7 +165,8 @@ private class WifiMeshBridge(private val activity: Activity) {
                         requestGroupInfo()
                     }
                     WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION -> requestGroupInfo()
-                    WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> requestConnectionInfo()
+                    WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION ->
+                        handleP2pStateChanged(intent)
                 }
             }
         }
@@ -151,17 +174,30 @@ private class WifiMeshBridge(private val activity: Activity) {
     private val networkCallback =
         object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                localNetwork = network
-                networkGeneration += 1
-                bindProcessToPreferredNetwork()
+                rememberWifiNetwork(network)
             }
 
             override fun onLost(network: Network) {
+                var changed = false
+                if (wifiDirectNetwork == network) {
+                    wifiDirectNetwork = null
+                    changed = true
+                }
                 if (localNetwork == network) {
                     localNetwork = null
+                    changed = true
+                }
+                if (changed) {
                     networkGeneration += 1
                     bindProcessToPreferredNetwork()
                 }
+            }
+
+            override fun onLinkPropertiesChanged(
+                network: Network,
+                linkProperties: LinkProperties
+            ) {
+                rememberWifiNetwork(network, linkProperties.interfaceName)
             }
         }
 
@@ -228,15 +264,27 @@ private class WifiMeshBridge(private val activity: Activity) {
         pendingLocationResult = null
         runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
         runCatching { connectivityManager.unregisterNetworkCallback(bluetoothNetworkCallback) }
+        wifiDirectNetwork = null
         localNetwork = null
         bluetoothNetwork = null
         bindProcessToNetwork(null)
+    }
+
+    fun onResume() {
+        foregroundActive = true
+        armWifiDirectInviteReceiver()
+    }
+
+    fun onPause() {
+        foregroundActive = false
     }
 
     fun onRequestPermissionsResult(requestCode: Int) {
         if (requestCode != PERMISSION_REQUEST_CODE) {
             return
         }
+
+        armWifiDirectInviteReceiver()
 
         val result = pendingLocationResult ?: return
         pendingLocationResult = null
@@ -262,7 +310,106 @@ private class WifiMeshBridge(private val activity: Activity) {
     }
 
     private fun bindProcessToPreferredNetwork() {
-        bindProcessToNetwork(localNetwork ?: bluetoothNetwork)
+        bindProcessToNetwork(preferredNetwork())
+    }
+
+    private fun preferredNetwork(): Network? {
+        val p2pGroupFormed = currentConnection?.get("groupFormed") == true
+        if (wifiDirectNetwork != null) {
+            return wifiDirectNetwork
+        }
+        if (p2pGroupFormed) {
+            return null
+        }
+        return if (preferBluetoothNetwork) {
+            bluetoothNetwork ?: localNetwork
+        } else {
+            localNetwork ?: bluetoothNetwork
+        }
+    }
+
+    private fun handleP2pStateChanged(intent: Intent) {
+        val state = intent.getIntExtra(
+            WifiP2pManager.EXTRA_WIFI_STATE,
+            WifiP2pManager.WIFI_P2P_STATE_DISABLED
+        )
+        wifiP2pEnabled = state == WifiP2pManager.WIFI_P2P_STATE_ENABLED
+        if (wifiP2pEnabled) {
+            requestConnectionInfo()
+            requestGroupInfo()
+            return
+        }
+
+        currentPeers = emptyList()
+        currentGroup = null
+        currentConnection = null
+        wifiDirectNetwork = null
+        networkGeneration += 1
+        bindProcessToPreferredNetwork()
+    }
+
+    private fun rememberWifiNetwork(network: Network, interfaceName: String? = null) {
+        val isWifiDirect = isWifiDirectInterface(
+            interfaceName ?: runCatching {
+                connectivityManager.getLinkProperties(network)?.interfaceName
+            }.getOrNull()
+        )
+        var changed = false
+        if (isWifiDirect) {
+            if (wifiDirectNetwork != network) {
+                wifiDirectNetwork = network
+                changed = true
+            }
+            if (localNetwork == network) {
+                localNetwork = null
+                changed = true
+            }
+        } else if (wifiDirectNetwork != network && localNetwork != network) {
+            localNetwork = network
+            changed = true
+        }
+        if (changed) {
+            networkGeneration += 1
+            bindProcessToPreferredNetwork()
+        }
+    }
+
+    private fun refreshKnownNetworks() {
+        var nextWifiDirectNetwork: Network? = null
+        var nextLocalNetwork: Network? = null
+
+        for (network in connectivityManager.allNetworks) {
+            val capabilities = runCatching {
+                connectivityManager.getNetworkCapabilities(network)
+            }.getOrNull() ?: continue
+            if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                continue
+            }
+
+            val interfaceName = runCatching {
+                connectivityManager.getLinkProperties(network)?.interfaceName
+            }.getOrNull()
+            if (isWifiDirectInterface(interfaceName)) {
+                nextWifiDirectNetwork = network
+            } else if (nextLocalNetwork == null) {
+                nextLocalNetwork = network
+            }
+        }
+
+        if (wifiDirectNetwork == nextWifiDirectNetwork && localNetwork == nextLocalNetwork) {
+            return
+        }
+
+        wifiDirectNetwork = nextWifiDirectNetwork
+        localNetwork = nextLocalNetwork
+        networkGeneration += 1
+        bindProcessToPreferredNetwork()
+    }
+
+    private fun isWifiDirectInterface(interfaceName: String?): Boolean {
+        val name = interfaceName ?: return false
+        return name.startsWith("p2p", ignoreCase = true) ||
+            name.contains("-p2p", ignoreCase = true)
     }
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
@@ -270,14 +417,18 @@ private class WifiMeshBridge(private val activity: Activity) {
             "capabilities" -> result.success(capabilities())
             "requestPermissions" -> {
                 requestRuntimePermissions()
+                armWifiDirectInviteReceiver()
                 result.success(permissionSnapshot())
             }
+            "prepareWifiDirectInvite" -> prepareWifiDirectInvite(result)
             "openWifiSettings" -> {
                 activity.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
                 result.success(true)
             }
+            "openWifiDirectSettings" -> openWifiDirectSettings(result)
             "openBluetoothSettings" -> openBluetoothSettings(result)
             "openBluetoothTetherSettings" -> openBluetoothTetherSettings(result)
+            "openLocationSettings" -> openLocationSettings(result)
             "openAppSettings" -> {
                 val intent = Intent(
                     Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -303,9 +454,9 @@ private class WifiMeshBridge(private val activity: Activity) {
             "createGroup" -> createGroup(result)
             "removeGroup" -> removeGroup(result)
             "groupInfo" -> {
-                requestConnectionInfo()
-                requestGroupInfo()
-                result.success(status())
+                refreshP2pSnapshot {
+                    result.success(status())
+                }
             }
             "startLocalOnlyHotspot" -> startLocalOnlyHotspot(result)
             "stopLocalOnlyHotspot" -> {
@@ -314,9 +465,9 @@ private class WifiMeshBridge(private val activity: Activity) {
             }
             "currentLocation" -> currentLocation(result)
             "status" -> {
-                requestConnectionInfo()
-                requestGroupInfo()
-                result.success(status())
+                refreshP2pSnapshot {
+                    result.success(status())
+                }
             }
             else -> result.notImplemented()
         }
@@ -336,7 +487,29 @@ private class WifiMeshBridge(private val activity: Activity) {
         }
     }
 
+    private fun openWifiDirectSettings(result: MethodChannel.Result) {
+        val opened = openFirstAvailableSettingsAction(
+            listOf(
+                "android.settings.WIFI_P2P_SETTINGS",
+                Settings.ACTION_WIFI_SETTINGS,
+                Settings.ACTION_WIRELESS_SETTINGS
+            )
+        )
+        if (opened) {
+            result.success(
+                status() + mapOf(
+                    "message" to "已打開 Wi‑Fi Direct 設定。請在 Direct 頁選擇另一部手機連接，完成後返回 APP。"
+                )
+            )
+        } else {
+            result.error("settings_unavailable", "未能打開 Wi‑Fi Direct 設定。", null)
+        }
+    }
+
     private fun openBluetoothTetherSettings(result: MethodChannel.Result) {
+        preferBluetoothNetwork = true
+        networkGeneration += 1
+        bindProcessToPreferredNetwork()
         val opened = openFirstAvailableSettingsAction(
             listOf(
                 "android.settings.TETHER_SETTINGS",
@@ -347,11 +520,29 @@ private class WifiMeshBridge(private val activity: Activity) {
         if (opened) {
             result.success(
                 status() + mapOf(
-                    "message" to "已打開 Android 熱點與網絡共享設定。請在系統設定開啟藍芽網絡共享。"
+                    "message" to "已啟用藍芽共享優先模式，請在系統設定開啟藍芽網絡共享。返回後 app 會優先使用該網絡。"
                 )
             )
         } else {
             result.error("settings_unavailable", "未能打開熱點與網絡共享設定。", null)
+        }
+    }
+
+    private fun openLocationSettings(result: MethodChannel.Result) {
+        val opened = openFirstAvailableSettingsAction(
+            listOf(
+                Settings.ACTION_LOCATION_SOURCE_SETTINGS,
+                Settings.ACTION_SETTINGS
+            )
+        )
+        if (opened) {
+            result.success(
+                status() + mapOf(
+                    "message" to "已打開 Android 定位設定。請開啟定位服務後再掃手機。"
+                )
+            )
+        } else {
+            result.error("settings_unavailable", "未能打開定位設定。", null)
         }
     }
 
@@ -381,13 +572,22 @@ private class WifiMeshBridge(private val activity: Activity) {
             "bluetoothSupported" to (bluetoothAdapter != null && hasBluetoothFeature),
             "torchSupported" to hasTorch(),
             "canOpenWifiSettings" to true,
+            "canOpenWifiDirectSettings" to true,
             "canOpenBluetoothSettings" to true,
             "canOpenBluetoothTetherSettings" to true,
+            "canOpenLocationSettings" to true,
             "permissions" to permissionSnapshot()
         )
     }
 
     private fun status(): Map<String, Any?> {
+        refreshKnownNetworks()
+        val selectedNetwork = preferredNetwork()
+        val boundToBluetooth = selectedNetwork != null && selectedNetwork == bluetoothNetwork
+        val boundToWifi =
+            selectedNetwork != null &&
+                selectedNetwork != bluetoothNetwork &&
+                (wifiDirectNetwork != null || localNetwork != null)
         return mapOf(
             "capabilities" to capabilities(),
             "peers" to currentPeers,
@@ -396,11 +596,56 @@ private class WifiMeshBridge(private val activity: Activity) {
             "connection" to currentConnection,
             "hotspot" to hotspotInfo,
             "wifiEnabled" to wifiManager.isWifiEnabled,
+            "wifiP2pEnabled" to wifiP2pEnabled,
+            "locationServicesEnabled" to locationServicesEnabled(),
             "bluetoothEnabled" to isBluetoothEnabled(),
-            "boundToWifi" to (localNetwork != null),
-            "boundToBluetooth" to (bluetoothNetwork != null && localNetwork == null),
+            "preferBluetoothNetwork" to preferBluetoothNetwork,
+            "boundToWifi" to boundToWifi,
+            "boundToBluetooth" to boundToBluetooth,
             "networkGeneration" to networkGeneration
         )
+    }
+
+    private fun ensureP2pReadyForOperation(result: MethodChannel.Result): Boolean {
+        if (!wifiP2pEnabled) {
+            result.error(
+                "wifi_direct_disabled",
+                "Wi‑Fi Direct 未啟用。請先開啟 Wi‑Fi / Wi‑Fi Direct 後再掃手機。",
+                status()
+            )
+            return false
+        }
+        if (!hasCoreWifiPermission()) {
+            requestRuntimePermissions()
+            result.error("permission_missing", "需要 Wi‑Fi Direct 權限後才可操作。", permissionSnapshot())
+            return false
+        }
+        if (!locationServicesEnabled()) {
+            result.error("location_mode_off", locationModeRequiredMessage(), locationModeSnapshot())
+            return false
+        }
+        if (p2pOperationBusy) {
+            result.error(
+                "BUSY",
+                "Wi‑Fi Direct 正在處理上一個操作，請稍後再試。",
+                status()
+            )
+            return false
+        }
+        return true
+    }
+
+    private fun runP2pOperationWithDebounce(block: () -> Unit) {
+        p2pOperationBusy = true
+        val now = System.currentTimeMillis()
+        val waitMs = (500L - (now - lastP2pOperationAt)).coerceAtLeast(0L)
+        lastP2pOperationAt = now + waitMs
+        mainHandler.postDelayed(block, waitMs)
+    }
+
+    private fun finishP2pOperation() {
+        p2pOperationBusy = false
+        lastP2pOperationAt = System.currentTimeMillis()
     }
 
     private fun setTorch(enabled: Boolean, result: MethodChannel.Result) {
@@ -524,6 +769,7 @@ private class WifiMeshBridge(private val activity: Activity) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissions += Manifest.permission.BLUETOOTH_CONNECT
         }
+        permissions += Manifest.permission.CAMERA
         permissions += Manifest.permission.ACCESS_COARSE_LOCATION
         permissions += Manifest.permission.ACCESS_FINE_LOCATION
 
@@ -670,6 +916,100 @@ private class WifiMeshBridge(private val activity: Activity) {
         }, 8000L)
     }
 
+    @SuppressLint("MissingPermission")
+    private fun prepareWifiDirectInvite(result: MethodChannel.Result) {
+        val manager = p2pManager ?: run {
+            result.error("wifi_direct_unavailable", "此 Android 裝置不支援 Wi-Fi Direct。", null)
+            return
+        }
+        val channel = p2pChannel ?: run {
+            result.error("wifi_direct_not_ready", "Wi-Fi Direct channel 未準備好。", null)
+            return
+        }
+        if (!hasCoreWifiPermission()) {
+            requestRuntimePermissions()
+            result.error(
+                "permission_missing",
+                "需要位置 / Wi‑Fi 權限後才可使用 Wi‑Fi Direct。",
+                permissionSnapshot()
+            )
+            return
+        }
+        if (!locationServicesEnabled()) {
+            result.error("location_mode_off", locationModeRequiredMessage(), locationModeSnapshot())
+            return
+        }
+
+        armWifiDirectInviteReceiver(
+            manager = manager,
+            channel = channel,
+            force = true,
+            onReady = {
+                requestPeers {
+                    result.success(
+                        status() + mapOf(
+                            "message" to "Wi‑Fi Direct 已預熱。請掃手機並發出邀請。"
+                        )
+                    )
+                }
+            },
+            onFailure = { reason ->
+                result.error(p2pFailureCode(reason), p2pReason(reason), reason)
+            }
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun armWifiDirectInviteReceiver(
+        manager: WifiP2pManager? = p2pManager,
+        channel: Channel? = p2pChannel,
+        force: Boolean = false,
+        onReady: (() -> Unit)? = null,
+        onFailure: ((Int) -> Unit)? = null
+    ) {
+        val activeManager = manager ?: return
+        val activeChannel = channel ?: return
+        if (!foregroundActive && !force) {
+            return
+        }
+        if (!hasCoreWifiPermission() || !locationServicesEnabled()) {
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (!force && now - lastInviteListenAt < 12_000L) {
+            onReady?.invoke()
+            return
+        }
+        lastInviteListenAt = now
+
+        fun startDiscover() {
+            activeManager.discoverPeers(
+                activeChannel,
+                object : ActionListener {
+                    override fun onSuccess() {
+                        mainHandler.postDelayed({
+                            requestPeers { onReady?.invoke() }
+                        }, 900)
+                    }
+
+                    override fun onFailure(reason: Int) {
+                        onFailure?.invoke(reason)
+                    }
+                }
+            )
+        }
+
+        configureAppServiceListeners(activeManager, activeChannel)
+        ensureLocalAppService(
+            activeManager,
+            activeChannel,
+            onReady = { startDiscover() },
+            onFailure = { startDiscover() }
+        )
+    }
+
+    @SuppressLint("MissingPermission")
     private fun discoverPeers(result: MethodChannel.Result) {
         val manager = p2pManager ?: run {
             result.error("wifi_direct_unavailable", "此 Android 裝置不支援 Wi-Fi Direct。", null)
@@ -680,26 +1020,37 @@ private class WifiMeshBridge(private val activity: Activity) {
             return
         }
 
-        if (!hasCoreWifiPermission()) {
-            requestRuntimePermissions()
-            result.error("permission_missing", "需要 Wi-Fi Direct 權限後才可掃描。", permissionSnapshot())
+        if (!ensureP2pReadyForOperation(result)) {
             return
         }
 
-        manager.discoverPeers(
-            channel,
-            object : ActionListener {
-                override fun onSuccess() {
-                    mainHandler.postDelayed({
-                        requestPeers { result.success(status()) }
-                    }, 1200)
-                }
+        runP2pOperationWithDebounce {
+            runCatching { manager.stopPeerDiscovery(channel, null) }
+            mainHandler.postDelayed({
+                manager.discoverPeers(
+                    channel,
+                    object : ActionListener {
+                        override fun onSuccess() {
+                            mainHandler.postDelayed({
+                                requestPeers {
+                                    finishP2pOperation()
+                                    result.success(
+                                        status() + mapOf(
+                                            "message" to "已掃描 Wi‑Fi Direct 手機。請選擇手機後發出邀請。"
+                                        )
+                                    )
+                                }
+                            }, 900)
+                        }
 
-                override fun onFailure(reason: Int) {
-                    result.error("discover_failed", p2pReason(reason), reason)
-                }
-            }
-        )
+                        override fun onFailure(reason: Int) {
+                            finishP2pOperation()
+                            result.error(p2pFailureCode(reason), p2pReason(reason), reason)
+                        }
+                    }
+                )
+            }, 500L)
+        }
     }
 
     private fun discoverAppPeers(result: MethodChannel.Result) {
@@ -717,6 +1068,10 @@ private class WifiMeshBridge(private val activity: Activity) {
             result.error("permission_missing", "需要 Wi-Fi Direct 權限後才可掃描 app peers。", permissionSnapshot())
             return
         }
+        if (!locationServicesEnabled()) {
+            result.error("location_mode_off", locationModeRequiredMessage(), locationModeSnapshot())
+            return
+        }
 
         appPeerAddresses.clear()
         appPeerNames.clear()
@@ -725,26 +1080,58 @@ private class WifiMeshBridge(private val activity: Activity) {
         }
 
         configureAppServiceListeners(manager, channel)
-        ensureLocalAppService(
+        warmUpPeerDiscovery(
             manager,
             channel,
             onReady = {
-                val request = WifiP2pDnsSdServiceRequest.newInstance(APP_SERVICE_TYPE)
-                manager.clearServiceRequests(
+                ensureLocalAppService(
+                    manager,
                     channel,
-                    object : ActionListener {
-                        override fun onSuccess() {
-                            addAppServiceRequest(manager, channel, request, result)
-                        }
+                    onReady = {
+                        val request = WifiP2pDnsSdServiceRequest.newInstance(APP_SERVICE_TYPE)
+                        manager.clearServiceRequests(
+                            channel,
+                            object : ActionListener {
+                                override fun onSuccess() {
+                                    addAppServiceRequest(manager, channel, request, result)
+                                }
 
-                        override fun onFailure(reason: Int) {
-                            result.error("service_clear_failed", p2pReason(reason), reason)
-                        }
+                                override fun onFailure(reason: Int) {
+                                    result.error(p2pFailureCode(reason), p2pReason(reason), reason)
+                                }
+                            }
+                        )
+                    },
+                    onFailure = { reason ->
+                        result.error(p2pFailureCode(reason), p2pReason(reason), reason)
                     }
                 )
             },
             onFailure = { reason ->
-                result.error("local_service_failed", p2pReason(reason), reason)
+                result.error(p2pFailureCode(reason), p2pReason(reason), reason)
+            }
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun warmUpPeerDiscovery(
+        manager: WifiP2pManager,
+        channel: Channel,
+        onReady: () -> Unit,
+        onFailure: (Int) -> Unit
+    ) {
+        manager.discoverPeers(
+            channel,
+            object : ActionListener {
+                override fun onSuccess() {
+                    mainHandler.postDelayed({
+                        requestPeers { onReady() }
+                    }, 900)
+                }
+
+                override fun onFailure(reason: Int) {
+                    onFailure(reason)
+                }
             }
         )
     }
@@ -764,7 +1151,15 @@ private class WifiMeshBridge(private val activity: Activity) {
                 }
 
                 override fun onFailure(reason: Int) {
-                    result.error("service_request_failed", p2pReason(reason), reason)
+                    if (reason == WifiP2pManager.ERROR) {
+                        refreshP2pSnapshot {
+                            result.success(
+                                status() + mapOf("message" to "沒有可移除的 Wi‑Fi Direct group。")
+                            )
+                        }
+                        return
+                    }
+                    result.error(p2pFailureCode(reason), p2pReason(reason), reason)
                 }
             }
         )
@@ -791,7 +1186,7 @@ private class WifiMeshBridge(private val activity: Activity) {
                 }
 
                 override fun onFailure(reason: Int) {
-                    result.error("service_discovery_failed", p2pReason(reason), reason)
+                    result.error(p2pFailureCode(reason), p2pReason(reason), reason)
                 }
             }
         )
@@ -877,9 +1272,9 @@ private class WifiMeshBridge(private val activity: Activity) {
     private fun appPeerDiscoveryMessage(): String {
         val count = appPeerAddresses.size
         return if (count > 0) {
-            "已找到 $count 個 Wi‑Fi Direct app peer，可直接連接。"
+            "已先預熱 Wi‑Fi Direct peer 掃描，並找到 $count 個 app peer，可直接連接。"
         } else {
-            "未找到已開啟本 app 的 Wi‑Fi Direct peer。請確認對方也開啟本 app 並按權限。"
+            "已預熱 Wi‑Fi Direct peer 掃描，但未找到已開啟本 app 的 peer。請確認兩部手機都開啟本 app、按權限，並開啟定位服務。"
         }
     }
 
@@ -908,6 +1303,7 @@ private class WifiMeshBridge(private val activity: Activity) {
         )
     }
 
+    @SuppressLint("MissingPermission")
     private fun connectPeer(deviceAddress: String?, result: MethodChannel.Result) {
         val manager = p2pManager ?: run {
             result.error("wifi_direct_unavailable", "此 Android 裝置不支援 Wi-Fi Direct。", null)
@@ -918,39 +1314,94 @@ private class WifiMeshBridge(private val activity: Activity) {
             return
         }
         if (deviceAddress.isNullOrBlank()) {
-            result.error("bad_peer", "缺少 Wi-Fi Direct deviceAddress。", null)
+            result.error("bad_peer", "缺少 Wi‑Fi Direct deviceAddress。", null)
             return
         }
-        if (!hasCoreWifiPermission()) {
-            requestRuntimePermissions()
-            result.error("permission_missing", "需要 Wi-Fi Direct 權限後才可連接。", permissionSnapshot())
-            return
+        if (!ensureP2pReadyForOperation(result)) return
+
+        runP2pOperationWithDebounce {
+            runCatching { manager.stopPeerDiscovery(channel, null) }
+            mainHandler.postDelayed({ fullCleanupThenConnect(deviceAddress, result) }, 300L)
         }
+    }
+
+    // Always cancelConnect → removeGroup → wait → connect, regardless of current state.
+    // This avoids branching on groupFormed which caused skipped cleanup and persistent ERROR.
+    private fun fullCleanupThenConnect(deviceAddress: String, result: MethodChannel.Result) {
+        val manager = p2pManager ?: return finishAndError(result, "wifi_direct_unavailable", "Wi-Fi Direct 不可用。")
+        val ch1 = p2pChannel ?: return finishAndError(result, "wifi_direct_not_ready", "Channel 未就緒。")
+
+        manager.cancelConnect(ch1, object : ActionListener {
+            override fun onSuccess() = step2()
+            override fun onFailure(reason: Int) = step2()
+            fun step2() {
+                val ch2 = p2pChannel ?: return finishAndError(result, "wifi_direct_not_ready", "Channel 未就緒。")
+                mainHandler.postDelayed({
+                    manager.removeGroup(ch2, object : ActionListener {
+                        override fun onSuccess() {
+                            currentGroup = null
+                            currentConnection = null
+                            wifiDirectNetwork = null
+                            bindProcessToPreferredNetwork()
+                            mainHandler.postDelayed({ doConnect(deviceAddress, result, 0) }, 800L)
+                        }
+                        override fun onFailure(reason: Int) {
+                            // No group to remove, or framework error — proceed anyway
+                            mainHandler.postDelayed({ doConnect(deviceAddress, result, 0) }, 800L)
+                        }
+                    })
+                }, 250L)
+            }
+        })
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun doConnect(deviceAddress: String, result: MethodChannel.Result, retryCount: Int) {
+        val manager = p2pManager ?: return finishAndError(result, "wifi_direct_unavailable", "Wi-Fi Direct 不可用。")
+        val channel = p2pChannel ?: return finishAndError(result, "wifi_direct_not_ready", "Channel 未就緒。")
 
         val config = WifiP2pConfig().apply {
             this.deviceAddress = deviceAddress
             wps.setup = WpsInfo.PBC
-            groupOwnerIntent = 7
+            // groupOwnerIntent omitted — let Android negotiate GO vs client
         }
+        manager.connect(channel, config, object : ActionListener {
+            override fun onSuccess() {
+                mainHandler.postDelayed({
+                    refreshP2pSnapshot {
+                        finishP2pOperation()
+                        result.success(status() + mapOf("message" to "Wi‑Fi Direct 邀請已送出，請在另一部手機接受系統邀請。"))
+                    }
+                }, 1500L)
+            }
 
-        @SuppressLint("MissingPermission")
-        manager.connect(
-            channel,
-            config,
-            object : ActionListener {
-                override fun onSuccess() {
-                    mainHandler.postDelayed({
-                        requestConnectionInfo()
-                        requestGroupInfo()
-                    }, 1200)
-                    result.success(status())
-                }
-
-                override fun onFailure(reason: Int) {
-                    result.error("connect_failed", p2pReason(reason), reason)
+            override fun onFailure(reason: Int) {
+                when {
+                    reason == WifiP2pManager.ERROR && retryCount < 2 -> {
+                        // Reinit channel to recover corrupted P2P framework state, then retry
+                        reinitP2pChannel()
+                        mainHandler.postDelayed({ doConnect(deviceAddress, result, retryCount + 1) }, 1500L)
+                    }
+                    reason == WifiP2pManager.BUSY && retryCount < 3 -> {
+                        mainHandler.postDelayed({ doConnect(deviceAddress, result, retryCount + 1) }, 1000L * (retryCount + 1))
+                    }
+                    else -> {
+                        finishP2pOperation()
+                        result.error(p2pFailureCode(reason), p2pReason(reason), reason)
+                    }
                 }
             }
-        )
+        })
+    }
+
+    private fun reinitP2pChannel() {
+        runCatching { p2pChannel?.close() }
+        p2pChannel = p2pManager?.initialize(appContext, Looper.getMainLooper(), null)
+    }
+
+    private fun finishAndError(result: MethodChannel.Result, code: String, message: String) {
+        finishP2pOperation()
+        result.error(code, message, null)
     }
 
     @SuppressLint("MissingPermission")
@@ -958,6 +1409,10 @@ private class WifiMeshBridge(private val activity: Activity) {
         if (!hasCoreWifiPermission()) {
             requestRuntimePermissions()
             result.error("permission_missing", "需要 Wi-Fi 掃描權限後才可列出附近 Wi-Fi。", permissionSnapshot())
+            return
+        }
+        if (!locationServicesEnabled()) {
+            result.error("location_mode_off", locationModeRequiredMessage(), locationModeSnapshot())
             return
         }
 
@@ -1046,21 +1501,50 @@ private class WifiMeshBridge(private val activity: Activity) {
             result.error("permission_missing", "需要 Wi-Fi Direct 權限後才可開 group。", permissionSnapshot())
             return
         }
+        if (!locationServicesEnabled()) {
+            result.error("location_mode_off", locationModeRequiredMessage(), locationModeSnapshot())
+            return
+        }
 
-        @SuppressLint("MissingPermission")
-        manager.createGroup(
-            channel,
-            object : ActionListener {
-                override fun onSuccess() {
-                    mainHandler.postDelayed({ requestGroupInfo() }, 1200)
-                    result.success(status())
-                }
+        refreshP2pSnapshot {
+            if (currentGroup != null || currentConnection?.get("groupFormed") == true) {
+                result.success(
+                    status() + mapOf("message" to "Wi‑Fi Direct group 已在運作。")
+                )
+            } else {
+                @SuppressLint("MissingPermission")
+                manager.createGroup(
+                    channel,
+                    object : ActionListener {
+                        override fun onSuccess() {
+                            mainHandler.postDelayed({
+                                refreshP2pSnapshot {
+                                    result.success(
+                                        status() + mapOf(
+                                            "message" to "Wi‑Fi Direct group 已開啟。"
+                                        )
+                                    )
+                                }
+                            }, 1200)
+                        }
 
-                override fun onFailure(reason: Int) {
-                    result.error("create_group_failed", p2pReason(reason), reason)
-                }
+                        override fun onFailure(reason: Int) {
+                            if (reason == WifiP2pManager.BUSY) {
+                                refreshP2pSnapshot {
+                                    result.success(
+                                        status() + mapOf(
+                                            "message" to "Wi‑Fi Direct 正在準備 group，稍後會再自動掃描。"
+                                        )
+                                    )
+                                }
+                                return
+                            }
+                            result.error(p2pFailureCode(reason), p2pReason(reason), reason)
+                        }
+                    }
+                )
             }
-        )
+        }
     }
 
     private fun removeGroup(result: MethodChannel.Result) {
@@ -1079,46 +1563,114 @@ private class WifiMeshBridge(private val activity: Activity) {
                 override fun onSuccess() {
                     currentGroup = null
                     currentConnection = null
+                    wifiDirectNetwork = null
+                    bindProcessToPreferredNetwork()
                     result.success(status())
                 }
 
                 override fun onFailure(reason: Int) {
-                    result.error("remove_group_failed", p2pReason(reason), reason)
+                    if (reason == WifiP2pManager.ERROR || reason == WifiP2pManager.BUSY) {
+                        refreshP2pSnapshot {
+                            result.success(
+                                status() + mapOf("message" to "沒有可移除的 Wi‑Fi Direct group。")
+                            )
+                        }
+                        return
+                    }
+                    result.error(p2pFailureCode(reason), p2pReason(reason), reason)
                 }
             }
         )
     }
 
     @SuppressLint("MissingPermission")
-    private fun requestConnectionInfo() {
-        val manager = p2pManager ?: return
-        val channel = p2pChannel ?: return
-        if (!hasCoreWifiPermission()) return
+    private fun refreshP2pSnapshot(onComplete: () -> Unit) {
+        var pending = 2
+        var finished = false
 
-        manager.requestConnectionInfo(
-            channel,
-            ConnectionInfoListener { info: WifiP2pInfo ->
-                currentConnection = mapOf(
-                    "groupFormed" to info.groupFormed,
-                    "isGroupOwner" to info.isGroupOwner,
-                    "groupOwnerAddress" to info.groupOwnerAddress?.hostAddress
-                )
+        fun done() {
+            if (finished) {
+                return
             }
-        )
+            pending -= 1
+            if (pending <= 0) {
+                finished = true
+                onComplete()
+            }
+        }
+
+        mainHandler.postDelayed({
+            if (!finished) {
+                finished = true
+                onComplete()
+            }
+        }, 1400L)
+
+        requestConnectionInfo { done() }
+        requestGroupInfo { done() }
+    }
+
+    private fun requestConnectionInfo(onComplete: (() -> Unit)? = null) {
+        val manager = p2pManager ?: run {
+            onComplete?.invoke()
+            return
+        }
+        val channel = p2pChannel ?: run {
+            onComplete?.invoke()
+            return
+        }
+        if (!hasCoreWifiPermission()) {
+            onComplete?.invoke()
+            return
+        }
+
+        runCatching {
+            manager.requestConnectionInfo(
+                channel,
+                ConnectionInfoListener { info: WifiP2pInfo ->
+                    currentConnection = mapOf(
+                        "groupFormed" to info.groupFormed,
+                        "isGroupOwner" to info.isGroupOwner,
+                        "groupOwnerAddress" to info.groupOwnerAddress?.hostAddress
+                    )
+                    if (!info.groupFormed) {
+                        wifiDirectNetwork = null
+                    }
+                    bindProcessToPreferredNetwork()
+                    onComplete?.invoke()
+                }
+            )
+        }.onFailure {
+            onComplete?.invoke()
+        }
     }
 
     @SuppressLint("MissingPermission")
-    private fun requestGroupInfo() {
-        val manager = p2pManager ?: return
-        val channel = p2pChannel ?: return
-        if (!hasCoreWifiPermission()) return
+    private fun requestGroupInfo(onComplete: (() -> Unit)? = null) {
+        val manager = p2pManager ?: run {
+            onComplete?.invoke()
+            return
+        }
+        val channel = p2pChannel ?: run {
+            onComplete?.invoke()
+            return
+        }
+        if (!hasCoreWifiPermission()) {
+            onComplete?.invoke()
+            return
+        }
 
-        manager.requestGroupInfo(
-            channel,
-            GroupInfoListener { group: WifiP2pGroup? ->
-                currentGroup = group?.toMap()
-            }
-        )
+        runCatching {
+            manager.requestGroupInfo(
+                channel,
+                GroupInfoListener { group: WifiP2pGroup? ->
+                    currentGroup = group?.toMap()
+                    onComplete?.invoke()
+                }
+            )
+        }.onFailure {
+            onComplete?.invoke()
+        }
     }
 
     private fun startLocalOnlyHotspot(result: MethodChannel.Result) {
@@ -1218,9 +1770,35 @@ private class WifiMeshBridge(private val activity: Activity) {
         } else {
             permissions += Manifest.permission.ACCESS_FINE_LOCATION
         }
+        permissions += Manifest.permission.ACCESS_FINE_LOCATION
         return permissions.all { permission ->
             hasPermission(permission)
         }
+    }
+
+    private fun locationServicesEnabled(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            locationManager.isLocationEnabled
+        } else {
+            @Suppress("DEPRECATION")
+            runCatching {
+                Settings.Secure.getInt(
+                    activity.contentResolver,
+                    Settings.Secure.LOCATION_MODE
+                ) != Settings.Secure.LOCATION_MODE_OFF
+            }.getOrDefault(false)
+        }
+    }
+
+    private fun locationModeSnapshot(): Map<String, Any?> {
+        return mapOf(
+            "locationServicesEnabled" to locationServicesEnabled(),
+            "canOpenLocationSettings" to true
+        )
+    }
+
+    private fun locationModeRequiredMessage(): String {
+        return "Android 需要開啟定位服務後，Wi‑Fi Direct 掃描和邀請才會正常。請開啟 Location Mode 後再試。"
     }
 
     private fun hasLocationPermission(): Boolean {
@@ -1274,6 +1852,15 @@ private class WifiMeshBridge(private val activity: Activity) {
             WifiP2pManager.BUSY -> "Wi-Fi Direct 正忙，請稍後再試。"
             WifiP2pManager.ERROR -> "Wi-Fi Direct 系統錯誤。"
             else -> "Wi-Fi Direct 操作失敗：$reason"
+        }
+    }
+
+    private fun p2pFailureCode(reason: Int): String {
+        return when (reason) {
+            WifiP2pManager.P2P_UNSUPPORTED -> "P2P_UNSUPPORTED"
+            WifiP2pManager.BUSY -> "BUSY"
+            WifiP2pManager.ERROR -> "ERROR"
+            else -> "P2P_$reason"
         }
     }
 

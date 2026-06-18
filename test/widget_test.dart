@@ -229,10 +229,9 @@ void main() {
     expect(find.byTooltip('功能介紹'), findsOneWidget);
     expect(find.text('社區網絡'), findsOneWidget);
     expect(find.text('SOS 燈'), findsOneWidget);
-    expect(find.text('WiFi P2P / 熱點'), findsOneWidget);
-    expect(find.text('掃 P2P'), findsOneWidget);
-    expect(find.text('開光網'), findsOneWidget);
-    expect(find.text('開熱點'), findsOneWidget);
+    expect(find.text('Wi‑Fi Direct 邀請'), findsOneWidget);
+    expect(find.text('掃手機'), findsWidgets);
+    expect(find.text('發出邀請'), findsOneWidget);
     expect(find.textContaining('請先開啟 WiFi'), findsOneWidget);
     expect(find.textContaining('重新開啟光之網絡'), findsOneWidget);
 
