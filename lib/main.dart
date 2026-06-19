@@ -177,8 +177,12 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   Timer? _wifiGroupTimer;
   bool _radarTrackingBusy = false;
   bool _wirelessStatusBusy = false;
+  bool _localNetworkPreferenceBusy = false;
   bool _startupPermissionsRequested = false;
+  bool? _lastPreferLocalNetwork;
   String? _lastWirelessStatusSignature;
+  String? _lastP2pOwnerSyncEndpoint;
+  DateTime? _lastP2pOwnerSyncAt;
 
   @override
   void initState() {
@@ -190,6 +194,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_handleTabChange);
     _sosLight.addListener(_handleSosLightChange);
+    _mesh.addListener(_handleMeshChange);
 
     unawaited(_initializeMesh());
   }
@@ -202,6 +207,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     }
 
     if (widget.autoStart) {
+      await _syncLocalNetworkPreference();
       _scheduleStartupPermissionsRequest();
       unawaited(_mesh.start());
       unawaited(_wifiMesh.refreshStatus());
@@ -214,6 +220,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _mesh.removeListener(_handleMeshChange);
     _mesh.dispose();
     _wifiMesh.dispose();
     _radar.dispose();
@@ -247,6 +254,13 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     if (active) {
       unawaited(_locateRadar());
     }
+  }
+
+  void _handleMeshChange() {
+    if (!widget.autoStart) {
+      return;
+    }
+    unawaited(_syncLocalNetworkPreference());
   }
 
   void _handleTabChange() {
@@ -423,6 +437,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     if (_mesh.networkMode != MeshNetworkMode.offline) {
       await _mesh.setNetworkMode(MeshNetworkMode.offline);
     }
+    await _syncLocalNetworkPreference();
     await _mesh.refreshNetworkPresence(forceRejoin: true);
     for (final delay in const [
       Duration(seconds: 2),
@@ -445,6 +460,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     if (peer.hasLanEndpoint) {
       await _mesh.syncLanPeer(peer);
     }
+    await _syncWifiDirectOwnerIfReady(force: true);
   }
 
   void _scheduleStartupPermissionsRequest() {
@@ -519,6 +535,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     try {
       final previousSignature = _lastWirelessStatusSignature;
       await _wifiMesh.refreshStatus(quiet: true);
+      await _syncLocalNetworkPreference();
       final nextSignature = _wirelessStatusSignature();
       _lastWirelessStatusSignature = nextSignature;
 
@@ -535,9 +552,65 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       } else if (wirelessReady && _mesh.isRunning) {
         await _mesh.refreshNetworkPresence();
       }
+
+      if (wirelessReady) {
+        await _syncWifiDirectOwnerIfReady(force: forceRejoin || networkChanged);
+      }
     } finally {
       _wirelessStatusBusy = false;
     }
+  }
+
+  Future<void> _syncLocalNetworkPreference() async {
+    if (_localNetworkPreferenceBusy || !_wifiMesh.isAndroid) {
+      return;
+    }
+
+    final preferLocalNetwork = _mesh.networkMode == MeshNetworkMode.offline;
+    if (_lastPreferLocalNetwork == preferLocalNetwork) {
+      return;
+    }
+
+    _localNetworkPreferenceBusy = true;
+    try {
+      await _wifiMesh.setPreferLocalNetwork(preferLocalNetwork);
+      _lastPreferLocalNetwork = preferLocalNetwork;
+    } finally {
+      _localNetworkPreferenceBusy = false;
+    }
+  }
+
+  Future<void> _syncWifiDirectOwnerIfReady({bool force = false}) async {
+    if (_mesh.networkMode != MeshNetworkMode.offline) {
+      return;
+    }
+
+    final connection = _wifiMesh.connection;
+    if (connection == null ||
+        !connection.groupFormed ||
+        connection.isGroupOwner ||
+        connection.groupOwnerAddress.isEmpty) {
+      _lastP2pOwnerSyncEndpoint = null;
+      _lastP2pOwnerSyncAt = null;
+      return;
+    }
+
+    final endpoint = '${connection.groupOwnerAddress}:${MeshChatService.tcpPort}';
+    final lastSyncAt = _lastP2pOwnerSyncAt;
+    if (!force &&
+        _lastP2pOwnerSyncEndpoint == endpoint &&
+        lastSyncAt != null &&
+        DateTime.now().difference(lastSyncAt) < const Duration(seconds: 15)) {
+      return;
+    }
+
+    _lastP2pOwnerSyncEndpoint = endpoint;
+    _lastP2pOwnerSyncAt = DateTime.now();
+    await _mesh.syncLanEndpoint(
+      name: 'Wi‑Fi Direct owner',
+      host: connection.groupOwnerAddress,
+      port: MeshChatService.tcpPort,
+    );
   }
 
   String _wirelessStatusSignature() {
@@ -1084,7 +1157,7 @@ class _FeatureGuideSheet extends StatelessWidget {
             '線上光網：連接已設定的 relay，聊天、光團、物資、信用和定位會同步給其他線上光點。',
             '離線 mesh：開啟 WiFi 後，APP 會用 LAN 自動尋找附近節點，並用 TCP 傳送訊息。',
             '多 hop 傳播：節點收到新訊息後會繼續向其他已知節點轉發。',
-            '連接方式：同一 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或手動輸入 IP。',
+            '連接方式：同一 WiFi、手機熱點、Wi-Fi Direct group 或 OpenWrt mesh。',
           ],
         ),
         _FeatureGuideSection(
@@ -6832,6 +6905,16 @@ class WifiMeshController extends ChangeNotifier {
     await _callStatus('openAppSettings', successMessage: '已打開 app 權限設定。');
   }
 
+  Future<void> setPreferLocalNetwork(bool enabled) async {
+    await _callStatus(
+      'setPreferLocalNetwork',
+      arguments: <String, Object?>{'enabled': enabled},
+      successMessage: enabled ? '已切回本地 mesh 網絡。' : '已切回一般網絡路由。',
+      showBusy: false,
+      updateMessage: false,
+    );
+  }
+
   Future<void> _callStatus(
     String method, {
     Object? arguments,
@@ -7804,11 +7887,25 @@ class MeshChatService extends ChangeNotifier {
   }
 
   Future<void> syncLanPeer(WifiP2pPeer peer) async {
+    if (!peer.hasLanEndpoint) {
+      _status = '這個 peer 未提供 LAN 位址，不能直接同步。';
+      notifyListeners();
+      return;
+    }
+
+    await syncLanEndpoint(name: peer.name, host: peer.host, port: peer.port);
+  }
+
+  Future<void> syncLanEndpoint({
+    required String name,
+    required String host,
+    required int port,
+  }) async {
     if (_networkMode == MeshNetworkMode.online) {
       await setNetworkMode(MeshNetworkMode.offline);
     }
 
-    if (!peer.hasLanEndpoint) {
+    if (host.trim().isEmpty || port <= 0) {
       _status = '這個 peer 未提供 LAN 位址，不能直接同步。';
       notifyListeners();
       return;
@@ -7823,28 +7920,28 @@ class MeshChatService extends ChangeNotifier {
       return;
     }
 
-    if (_localAddresses.contains(peer.host)) {
+    if (_localAddresses.contains(host)) {
       _status = '已略過本機 LAN peer。';
       notifyListeners();
       return;
     }
 
-    final helloSent = await _sendJson(peer.host, peer.port, _helloPacket());
+    final helloSent = await _sendJson(host, port, _helloPacket());
     if (!helloSent) {
-      _status = '未能連接 ${peer.name}（${peer.host}:${peer.port}）。請確認對方節點已啟動。';
+      _status = '未能連接 $name（$host:$port）。請確認對方節點已啟動。';
       notifyListeners();
       return;
     }
 
     _rememberPeer(
-      id: 'endpoint:${peer.host}:${peer.port}',
-      name: peer.name,
-      host: peer.host,
-      port: peer.port,
+      id: 'endpoint:$host:$port',
+      name: name,
+      host: host,
+      port: port,
       notify: false,
     );
-    await _syncRecentState(peer.host, peer.port);
-    _status = '已連接 ${peer.name}，正在透過 WiFi LAN mesh 同步。';
+    await _syncRecentState(host, port);
+    _status = '已連接 $name，正在透過 WiFi LAN mesh 同步。';
     notifyListeners();
   }
 

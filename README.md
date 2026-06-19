@@ -31,7 +31,7 @@
 - 離線 mesh：在 LAN 內自動尋找光點，並以 TCP 傳送訊息。
 - 多 hop 轉發：收到新訊息後會向其他已知節點再傳播。
 - 無線工具：Android 可掃 P2P、開 Wi-Fi Direct group、開本地熱點、掃附近 WiFi；iOS 可掃同一 WiFi 內的 LAN peer。
-- 手動連接：自動發現失敗時，可用對方 IP 加入同一個本地網絡。
+- 自動重試：自動發現失敗時，重新掃描同一 WiFi / Wi-Fi Direct / 熱點網絡。
 
 ### 光之通道
 
@@ -87,7 +87,7 @@ wss://YOUR_RELAY_DOMAIN/ws/light
 1. 開啟 app，按「權限」允許 WiFi / nearby devices 權限。
 2. 按「啟動節點」，讓 TCP/UDP chat service 開始監聽。
 3. 可選其中一種接入方式：
-   - 同一 WiFi / router / OpenWrt mesh：直接等待自動發現，或手動輸入對方 IP。
+   - 同一 WiFi / router / OpenWrt mesh：直接等待自動發現，或重新掃描附近 app peer。
    - Wi-Fi Direct：按「掃 P2P」，選 peer 連接；或按「開群組」由本機做 group owner。
    - 本地熱點：按「開熱點」，其他手機在系統 WiFi 清單連入顯示的 SSID。
    - 附近 WiFi：按「掃附近 WiFi」，輸入密碼後選 SSID 連接。

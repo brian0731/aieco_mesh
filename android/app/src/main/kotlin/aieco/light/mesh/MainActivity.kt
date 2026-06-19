@@ -151,6 +151,7 @@ private class WifiMeshBridge(private val activity: Activity) {
     private var wifiP2pEnabled = p2pManager != null
     private var p2pOperationBusy = false
     private var lastP2pOperationAt = 0L
+    private var preferLocalNetwork = true
     private var preferBluetoothNetwork = false
     private var pendingLocationResult: MethodChannel.Result? = null
     private var torchCameraId: String? = null
@@ -314,6 +315,10 @@ private class WifiMeshBridge(private val activity: Activity) {
     }
 
     private fun preferredNetwork(): Network? {
+        if (!preferLocalNetwork) {
+            return null
+        }
+
         val p2pGroupFormed = currentConnection?.get("groupFormed") == true
         if (wifiDirectNetwork != null) {
             return wifiDirectNetwork
@@ -437,6 +442,10 @@ private class WifiMeshBridge(private val activity: Activity) {
                 activity.startActivity(intent)
                 result.success(true)
             }
+            "setPreferLocalNetwork" -> setPreferLocalNetwork(
+                call.argument<Boolean>("enabled") == true,
+                result
+            )
             "setTorch" -> setTorch(call.argument<Boolean>("enabled") == true, result)
             "discoverPeers" -> discoverPeers(result)
             "discoverAppPeers" -> discoverAppPeers(result)
@@ -588,9 +597,33 @@ private class WifiMeshBridge(private val activity: Activity) {
             selectedNetwork != null &&
                 selectedNetwork != bluetoothNetwork &&
                 (wifiDirectNetwork != null || localNetwork != null)
+
+        // Merge currentPeers with group clients to show connected devices
+        val allPeers = buildList {
+            addAll(currentPeers)
+
+            // Add group clients (already connected devices) to the peer list
+            currentGroup?.let { group ->
+                @Suppress("UNCHECKED_CAST")
+                val clients = (group["clients"] as? List<Map<String, Any?>>).orEmpty()
+
+                // Filter out duplicates by device address
+                val existingAddresses = currentPeers.mapNotNull {
+                    it["deviceAddress"] as? String
+                }.toSet()
+
+                clients.forEach { client ->
+                    val address = client["deviceAddress"] as? String
+                    if (address != null && address !in existingAddresses) {
+                        add(client)
+                    }
+                }
+            }
+        }
+
         return mapOf(
             "capabilities" to capabilities(),
-            "peers" to currentPeers,
+            "peers" to allPeers,
             "wifiNetworks" to currentWifiNetworks,
             "group" to currentGroup,
             "connection" to currentConnection,
@@ -599,11 +632,21 @@ private class WifiMeshBridge(private val activity: Activity) {
             "wifiP2pEnabled" to wifiP2pEnabled,
             "locationServicesEnabled" to locationServicesEnabled(),
             "bluetoothEnabled" to isBluetoothEnabled(),
+            "preferLocalNetwork" to preferLocalNetwork,
             "preferBluetoothNetwork" to preferBluetoothNetwork,
             "boundToWifi" to boundToWifi,
             "boundToBluetooth" to boundToBluetooth,
             "networkGeneration" to networkGeneration
         )
+    }
+
+    private fun setPreferLocalNetwork(enabled: Boolean, result: MethodChannel.Result) {
+        if (preferLocalNetwork != enabled) {
+            preferLocalNetwork = enabled
+            networkGeneration += 1
+        }
+        bindProcessToPreferredNetwork()
+        result.success(status())
     }
 
     private fun ensureP2pReadyForOperation(result: MethodChannel.Result): Boolean {
@@ -620,7 +663,8 @@ private class WifiMeshBridge(private val activity: Activity) {
             result.error("permission_missing", "需要 Wi‑Fi Direct 權限後才可操作。", permissionSnapshot())
             return false
         }
-        if (!locationServicesEnabled()) {
+        // Android 13+ with NEARBY_WIFI_DEVICES(neverForLocation): location services not needed for P2P
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && !locationServicesEnabled()) {
             result.error("location_mode_off", locationModeRequiredMessage(), locationModeSnapshot())
             return false
         }
@@ -935,7 +979,7 @@ private class WifiMeshBridge(private val activity: Activity) {
             )
             return
         }
-        if (!locationServicesEnabled()) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && !locationServicesEnabled()) {
             result.error("location_mode_off", locationModeRequiredMessage(), locationModeSnapshot())
             return
         }
@@ -972,9 +1016,8 @@ private class WifiMeshBridge(private val activity: Activity) {
         if (!foregroundActive && !force) {
             return
         }
-        if (!hasCoreWifiPermission() || !locationServicesEnabled()) {
-            return
-        }
+        if (!hasCoreWifiPermission()) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && !locationServicesEnabled()) return
 
         val now = System.currentTimeMillis()
         if (!force && now - lastInviteListenAt < 12_000L) {
@@ -1000,12 +1043,34 @@ private class WifiMeshBridge(private val activity: Activity) {
             )
         }
 
+        fun removeGroupThenDiscover() {
+            // Skip removal if a connection is already active — don't break an established session.
+            // Only remove if we are a lone GO with no connected peers (both-GO scenario).
+            val groupFormed = currentConnection?.get("groupFormed") == true
+            if (groupFormed) {
+                startDiscover()
+                return
+            }
+            activeManager.removeGroup(activeChannel, object : ActionListener {
+                override fun onSuccess() {
+                    currentGroup = null
+                    currentConnection = null
+                    wifiDirectNetwork = null
+                    bindProcessToPreferredNetwork()
+                    mainHandler.postDelayed({ startDiscover() }, 500L)
+                }
+                override fun onFailure(reason: Int) {
+                    startDiscover()
+                }
+            })
+        }
+
         configureAppServiceListeners(activeManager, activeChannel)
         ensureLocalAppService(
             activeManager,
             activeChannel,
-            onReady = { startDiscover() },
-            onFailure = { startDiscover() }
+            onReady = { removeGroupThenDiscover() },
+            onFailure = { removeGroupThenDiscover() }
         )
     }
 
@@ -1068,7 +1133,7 @@ private class WifiMeshBridge(private val activity: Activity) {
             result.error("permission_missing", "需要 Wi-Fi Direct 權限後才可掃描 app peers。", permissionSnapshot())
             return
         }
-        if (!locationServicesEnabled()) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && !locationServicesEnabled()) {
             result.error("location_mode_off", locationModeRequiredMessage(), locationModeSnapshot())
             return
         }
@@ -1343,14 +1408,29 @@ private class WifiMeshBridge(private val activity: Activity) {
                             currentConnection = null
                             wifiDirectNetwork = null
                             bindProcessToPreferredNetwork()
-                            mainHandler.postDelayed({ doConnect(deviceAddress, result, 0) }, 800L)
+                            rediscoverThenConnect(manager, deviceAddress, result)
                         }
                         override fun onFailure(reason: Int) {
                             // No group to remove, or framework error — proceed anyway
-                            mainHandler.postDelayed({ doConnect(deviceAddress, result, 0) }, 800L)
+                            rediscoverThenConnect(manager, deviceAddress, result)
                         }
                     })
                 }, 250L)
+            }
+        })
+    }
+
+    // After cleanup, re-run discoverPeers so Android 13+ peer list is repopulated
+    // before connect() is called (removeGroup clears the peer list on Android 13+).
+    @SuppressLint("MissingPermission")
+    private fun rediscoverThenConnect(manager: WifiP2pManager, deviceAddress: String, result: MethodChannel.Result) {
+        val channel = p2pChannel ?: return finishAndError(result, "wifi_direct_not_ready", "Channel 未就緒。")
+        manager.discoverPeers(channel, object : ActionListener {
+            override fun onSuccess() {
+                mainHandler.postDelayed({ doConnect(deviceAddress, result, 0) }, 1500L)
+            }
+            override fun onFailure(reason: Int) {
+                mainHandler.postDelayed({ doConnect(deviceAddress, result, 0) }, 800L)
             }
         })
     }
@@ -1363,7 +1443,6 @@ private class WifiMeshBridge(private val activity: Activity) {
         val config = WifiP2pConfig().apply {
             this.deviceAddress = deviceAddress
             wps.setup = WpsInfo.PBC
-            // groupOwnerIntent omitted — let Android negotiate GO vs client
         }
         manager.connect(channel, config, object : ActionListener {
             override fun onSuccess() {
@@ -1501,7 +1580,7 @@ private class WifiMeshBridge(private val activity: Activity) {
             result.error("permission_missing", "需要 Wi-Fi Direct 權限後才可開 group。", permissionSnapshot())
             return
         }
-        if (!locationServicesEnabled()) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && !locationServicesEnabled()) {
             result.error("location_mode_off", locationModeRequiredMessage(), locationModeSnapshot())
             return
         }
@@ -1766,11 +1845,11 @@ private class WifiMeshBridge(private val activity: Activity) {
             Manifest.permission.CHANGE_WIFI_MULTICAST_STATE
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+: NEARBY_WIFI_DEVICES (neverForLocation) replaces ACCESS_FINE_LOCATION for P2P
             permissions += Manifest.permission.NEARBY_WIFI_DEVICES
         } else {
             permissions += Manifest.permission.ACCESS_FINE_LOCATION
         }
-        permissions += Manifest.permission.ACCESS_FINE_LOCATION
         return permissions.all { permission ->
             hasPermission(permission)
         }
