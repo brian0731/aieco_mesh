@@ -1876,102 +1876,126 @@ class _ChatSafetySheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final acceptedAt = mesh.eulaAcceptedAt;
-    final acceptedLabel = acceptedAt == null
-        ? '尚未同意'
-        : '已於 ${_formatDateTime(acceptedAt)} 同意';
+    return ListenableBuilder(
+      listenable: mesh,
+      builder: (context, _) {
+        final acceptedAt = mesh.eulaAcceptedAt;
+        final acceptedLabel = acceptedAt == null
+            ? '尚未同意'
+            : '已於 ${_formatDateTime(acceptedAt)} 同意';
+        final blockedUsers = mesh.blockedUsers;
 
-    return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
-        ),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+            ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
               children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE0F2E9),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFBFD9CE)),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE0F2E9),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFBFD9CE)),
+                      ),
+                      child: const Icon(
+                        Icons.shield_outlined,
+                        color: Color(0xFF0D7C66),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '聊天安全與舉報',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '條款狀態：$acceptedLabel',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: const Color(0xFF566B60)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (!mesh.eulaAccepted)
+                  FilledButton.icon(
+                    onPressed: onAcceptTerms,
+                    icon: const Icon(Icons.verified_user_outlined),
+                    label: const Text('同意最終用戶許可協議'),
                   ),
-                  child: const Icon(
-                    Icons.shield_outlined,
-                    color: Color(0xFF0D7C66),
+                if (!mesh.eulaAccepted) const SizedBox(height: 12),
+                const _SafetyPolicyText(showContact: true),
+                const SizedBox(height: 12),
+                _SafetyStatusCard(
+                  icon: Icons.filter_alt_outlined,
+                  title: '內容過濾',
+                  body:
+                      '訊息、光團名稱和物資發布會在送出及接收時自動檢查；疑似色情、仇恨、騷擾、暴力威脅、詐騙、垃圾訊息或非法交易內容會被阻擋。',
+                ),
+                _SafetyStatusCard(
+                  icon: Icons.flag_outlined,
+                  title: '舉報與處理',
+                  body:
+                      '可在訊息或用戶選單舉報不當內容。開發者收到 app 內記錄或電郵後，會在 $_moderationResponseWindow 內審核、刪除違規內容並移除發布該內容的惡意用戶。',
+                ),
+                _SafetyStatusCard(
+                  icon: Icons.block,
+                  title: '封鎖與解鎖',
+                  body: '封鎖用戶後，對方訊息、物資和定位會立即從你的信息流隱藏；你可在安全中心解鎖用戶。',
+                ),
+                if (blockedUsers.isNotEmpty)
+                  _SafetyStatusCard(
+                    icon: Icons.lock_open_outlined,
+                    title: '已封鎖用戶',
+                    body: '解鎖後，之後收到的新訊息、物資和定位會重新顯示。',
+                    child: _BlockedUsersList(
+                      users: blockedUsers,
+                      onUnblockUser: (user) => _unblockUser(context, user),
+                    ),
+                  ),
+                _SafetyStatusCard(
+                  icon: Icons.mail_outline,
+                  title: '聯絡開發者',
+                  body: '舉報不當行為、惡意用戶或安全問題：',
+                  child: const SelectableText(
+                    _moderationContactEmail,
+                    style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '聊天安全與舉報',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '條款狀態：$acceptedLabel',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF566B60),
-                        ),
-                      ),
-                    ],
+                if (mesh.moderationReportCount > 0)
+                  _SafetyStatusCard(
+                    icon: Icons.receipt_long_outlined,
+                    title: '本機舉報記錄',
+                    body: '已儲存 ${mesh.moderationReportCount} 宗舉報，可向開發者提供作審核跟進。',
                   ),
-                ),
               ],
             ),
-            const SizedBox(height: 12),
-            if (!mesh.eulaAccepted)
-              FilledButton.icon(
-                onPressed: onAcceptTerms,
-                icon: const Icon(Icons.verified_user_outlined),
-                label: const Text('同意最終用戶許可協議'),
-              ),
-            if (!mesh.eulaAccepted) const SizedBox(height: 12),
-            const _SafetyPolicyText(showContact: true),
-            const SizedBox(height: 12),
-            _SafetyStatusCard(
-              icon: Icons.filter_alt_outlined,
-              title: '內容過濾',
-              body:
-                  '訊息、光團名稱和物資發布會在送出及接收時自動檢查；疑似色情、仇恨、騷擾、暴力威脅、詐騙、垃圾訊息或非法交易內容會被阻擋。',
-            ),
-            _SafetyStatusCard(
-              icon: Icons.flag_outlined,
-              title: '舉報與處理',
-              body:
-                  '可在訊息或用戶選單舉報不當內容。開發者收到 app 內記錄或電郵後，會在 $_moderationResponseWindow 內審核、刪除違規內容並移除發布該內容的惡意用戶。',
-            ),
-            _SafetyStatusCard(
-              icon: Icons.block,
-              title: '封鎖與刪除',
-              body: '封鎖用戶後，對方訊息、物資和定位會立即從你的信息流隱藏；每則訊息也可立即從本機信息流刪除。',
-            ),
-            _SafetyStatusCard(
-              icon: Icons.mail_outline,
-              title: '聯絡開發者',
-              body: '舉報不當行為、惡意用戶或安全問題：',
-              child: const SelectableText(
-                _moderationContactEmail,
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-            if (mesh.moderationReportCount > 0)
-              _SafetyStatusCard(
-                icon: Icons.receipt_long_outlined,
-                title: '本機舉報記錄',
-                body: '已儲存 ${mesh.moderationReportCount} 宗舉報，可向開發者提供作審核跟進。',
-              ),
-          ],
-        ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _unblockUser(BuildContext context, MeshBlockedUser user) {
+    mesh.unblockUser(user.id, userName: user.name);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mesh.status),
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -1983,6 +2007,58 @@ class _ChatSafetySheet extends StatelessWidget {
     final hour = local.hour.toString().padLeft(2, '0');
     final minute = local.minute.toString().padLeft(2, '0');
     return '${local.year}-$month-$day $hour:$minute';
+  }
+}
+
+class _BlockedUsersList extends StatelessWidget {
+  const _BlockedUsersList({required this.users, required this.onUnblockUser});
+
+  final List<MeshBlockedUser> users;
+  final ValueChanged<MeshBlockedUser> onUnblockUser;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var index = 0; index < users.length; index += 1) ...[
+          if (index > 0) const Divider(height: 1),
+          _BlockedUserRow(user: users[index], onUnblockUser: onUnblockUser),
+        ],
+      ],
+    );
+  }
+}
+
+class _BlockedUserRow extends StatelessWidget {
+  const _BlockedUserRow({required this.user, required this.onUnblockUser});
+
+  final MeshBlockedUser user;
+  final ValueChanged<MeshBlockedUser> onUnblockUser;
+
+  @override
+  Widget build(BuildContext context) {
+    final showId = user.name != user.id;
+
+    return ListTile(
+      key: ValueKey('blocked-user-${user.id}'),
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.person_off_outlined),
+      title: Text(
+        user.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      subtitle: showId
+          ? Text(user.id, maxLines: 1, overflow: TextOverflow.ellipsis)
+          : null,
+      trailing: TextButton.icon(
+        key: ValueKey('unblock-user-${user.id}'),
+        onPressed: () => onUnblockUser(user),
+        icon: const Icon(Icons.lock_open, size: 18),
+        label: const Text('解鎖'),
+      ),
+    );
   }
 }
 
@@ -2014,7 +2090,7 @@ class _SafetyPolicyText extends StatelessWidget {
           text:
               '違規內容會被刪除；發布不良內容或惡意行為的用戶會被移除或封鎖。開發者會在 $_moderationResponseWindow 內處理舉報。',
         ),
-        const _SafetyPolicyBullet(text: '你可以舉報訊息或用戶、封鎖惡意用戶，並立即從信息流刪除不想看到的帖子。'),
+        const _SafetyPolicyBullet(text: '你可以舉報訊息或用戶、封鎖或解鎖用戶，並立即從信息流刪除不想看到的帖子。'),
         if (showContact) ...[
           const SizedBox(height: 8),
           Text(
@@ -3463,13 +3539,22 @@ class _OnlineGoogleRadarMap extends StatefulWidget {
 
 class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
   WebViewController? _controller;
+  Timer? _loadTimeoutTimer;
   var _progress = 0;
   var _pageReady = false;
+  var _mapReady = false;
+  String? _mapError;
 
   @override
   void initState() {
     super.initState();
     _configureController();
+  }
+
+  @override
+  void dispose() {
+    _loadTimeoutTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -3487,7 +3572,10 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
   }
 
   void _configureController() {
+    _loadTimeoutTimer?.cancel();
     _pageReady = false;
+    _mapReady = false;
+    _mapError = null;
     _progress = 0;
 
     if (!_canUseWebView || widget.apiKey.isEmpty) {
@@ -3521,6 +3609,9 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
       );
 
     _controller = controller;
+    _loadTimeoutTimer = Timer(const Duration(seconds: 15), () {
+      _setMapError('Google Map 載入逾時，請檢查外網、API key 或稍後再試。');
+    });
     unawaited(
       controller.loadHtmlString(
         _googleRadarMapHtml(
@@ -3546,6 +3637,14 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
         final action = decoded['action']?.toString();
         final contactId = decoded['contactId']?.toString() ?? '';
         switch (action) {
+          case 'mapReady':
+            _setMapReady();
+            return;
+          case 'mapError':
+            _setMapError(
+              decoded['message']?.toString() ?? 'Google Map 未能載入，請切換離線地圖後再試。',
+            );
+            return;
           case 'quote':
             final contact = _contactById(contactId);
             if (contact != null && !contact.isMe) {
@@ -3564,6 +3663,34 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
     }
 
     widget.onSelectedContactChanged(trimmed);
+  }
+
+  void _retryMap() {
+    setState(_configureController);
+  }
+
+  void _setMapReady() {
+    _loadTimeoutTimer?.cancel();
+    if (!mounted || _mapReady) {
+      return;
+    }
+
+    setState(() {
+      _mapReady = true;
+      _mapError = null;
+    });
+  }
+
+  void _setMapError(String message) {
+    if (!mounted || _mapReady) {
+      return;
+    }
+
+    _loadTimeoutTimer?.cancel();
+    setState(() {
+      _mapError = message;
+      _progress = 100;
+    });
   }
 
   bool get _canUseWebView {
@@ -3678,6 +3805,16 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
       child: Stack(
         children: [
           Positioned.fill(child: WebViewWidget(controller: controller)),
+          if (_mapError != null)
+            Positioned.fill(
+              child: _GoogleMapUnavailable(
+                icon: Icons.map_outlined,
+                title: 'Google Map 載入失敗',
+                message: _mapError!,
+                actionLabel: '重試',
+                onAction: _retryMap,
+              ),
+            ),
           if (_progress < 100)
             Positioned(
               left: 0,
@@ -3781,11 +3918,15 @@ class _GoogleMapUnavailable extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.message,
+    this.actionLabel,
+    this.onAction,
   });
 
   final IconData icon;
   final String title;
   final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -3820,6 +3961,14 @@ class _GoogleMapUnavailable extends StatelessWidget {
                   height: 1.35,
                 ),
               ),
+              if (actionLabel != null && onAction != null) ...[
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: onAction,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(actionLabel!),
+                ),
+              ],
             ],
           ),
         ),
@@ -3932,6 +4081,8 @@ String _googleRadarMapHtml({
     let markerContacts = {};
     let lastFocusVersion = -1;
     let lastCenterKey = '';
+    let mapReadyPosted = false;
+    let mapErrorPosted = false;
 
     const hongKongCenter = {
       lat: $_hongKongCenterLatitude,
@@ -3939,29 +4090,44 @@ String _googleRadarMapHtml({
     };
 
     function initRadarMap() {
-      const state = window.__RADAR_STATE__ || {};
-      const center = normalizePosition(state.center) || hongKongCenter;
-      map = new google.maps.Map(document.getElementById('map'), {
-        center,
-        zoom: 11,
-        clickableIcons: false,
-        fullscreenControl: false,
-        mapTypeControl: false,
-        streetViewControl: false,
-        gestureHandling: 'greedy'$mapIdOption
-      });
-      infoWindow = new google.maps.InfoWindow({ maxWidth: 190 });
-      map.addListener('click', () => postSelection(''));
-      google.maps.event.addListenerOnce(map, 'tilesloaded', () => {
-        const loading = document.getElementById('loading');
-        if (loading) {
-          loading.style.display = 'none';
-        }
-      });
-      window.setRadarState(state);
+      try {
+        const state = window.__RADAR_STATE__ || {};
+        const center = normalizePosition(state.center) || hongKongCenter;
+        map = new google.maps.Map(document.getElementById('map'), {
+          center,
+          zoom: 11,
+          clickableIcons: false,
+          fullscreenControl: false,
+          mapTypeControl: false,
+          streetViewControl: false,
+          gestureHandling: 'greedy'$mapIdOption
+        });
+        infoWindow = new google.maps.InfoWindow({ maxWidth: 190 });
+        map.addListener('click', () => postSelection(''));
+        google.maps.event.addListenerOnce(map, 'tilesloaded', () => {
+          const loading = document.getElementById('loading');
+          if (loading) {
+            loading.style.display = 'none';
+          }
+          postMapReady();
+        });
+        window.setRadarState(state);
+      } catch (error) {
+        postMapError('Google Map 初始化失敗：' + errorMessage(error));
+      }
     }
 
     window.initRadarMap = initRadarMap;
+    window.gm_authFailure = function() {
+      postMapError('Google Maps API key 被拒絕。請檢查 key、Maps JavaScript API、網域或 Android/iOS app 限制。');
+    };
+    window.onerror = function(message, source, lineno, colno, error) {
+      postMapError('Google Map JavaScript 錯誤：' + errorMessage(error || message));
+      return false;
+    };
+    window.handleGoogleMapsScriptError = function() {
+      postMapError('未能下載 Google Maps JavaScript。請檢查網絡、防火牆或 Google 服務是否可連線。');
+    };
 
     window.setRadarState = function(state) {
       window.__RADAR_STATE__ = state || {};
@@ -4200,8 +4366,47 @@ String _googleRadarMapHtml({
         }));
       }
     }
+
+    function postMapReady() {
+      if (mapReadyPosted || mapErrorPosted) {
+        return;
+      }
+      mapReadyPosted = true;
+      if (window.RadarBridge && window.RadarBridge.postMessage) {
+        window.RadarBridge.postMessage(JSON.stringify({
+          action: 'mapReady'
+        }));
+      }
+    }
+
+    function postMapError(message) {
+      if (mapReadyPosted || mapErrorPosted) {
+        return;
+      }
+      mapErrorPosted = true;
+      const loading = document.getElementById('loading');
+      if (loading) {
+        loading.textContent = message || 'Google Map 載入失敗';
+      }
+      if (window.RadarBridge && window.RadarBridge.postMessage) {
+        window.RadarBridge.postMessage(JSON.stringify({
+          action: 'mapError',
+          message: message || 'Google Map 載入失敗'
+        }));
+      }
+    }
+
+    function errorMessage(error) {
+      if (!error) {
+        return '未知錯誤';
+      }
+      if (typeof error === 'string') {
+        return error;
+      }
+      return error.message || String(error);
+    }
   </script>
-  <script async defer src="https://maps.googleapis.com/maps/api/js?key=$encodedKey&v=weekly&callback=initRadarMap"></script>
+  <script async defer onerror="handleGoogleMapsScriptError()" src="https://maps.googleapis.com/maps/api/js?key=$encodedKey&v=weekly&callback=initRadarMap"></script>
 </body>
 </html>
 ''';
@@ -8839,6 +9044,7 @@ class MeshChatService extends ChangeNotifier {
   static const String _displayNamePrefsKey = 'mesh.displayName';
   static const String _eulaAcceptedPrefsKey = 'mesh.eulaAcceptedAt';
   static const String _blockedUsersPrefsKey = 'mesh.blockedUsers';
+  static const String _blockedUserNamesPrefsKey = 'mesh.blockedUserNames';
   static const String _hiddenMessagesPrefsKey = 'mesh.hiddenMessages';
   static const String _moderationReportsPrefsKey = 'mesh.moderationReports';
   static const int _maxStoredModerationReports = 80;
@@ -8889,6 +9095,7 @@ class MeshChatService extends ChangeNotifier {
   final Set<String> _seenRoomIds = <String>{_defaultRoomId};
   final Map<String, DateTime> _lastSyncAt = <String, DateTime>{};
   final Set<String> _blockedUserIds = <String>{};
+  final Map<String, String> _blockedUserNames = <String, String>{};
   final Set<String> _hiddenMessageIds = <String>{};
   final List<MeshModerationReport> _moderationReports =
       <MeshModerationReport>[];
@@ -8930,6 +9137,21 @@ class MeshChatService extends ChangeNotifier {
   DateTime? get eulaAcceptedAt => _eulaAcceptedAt;
   int get moderationReportCount => _moderationReports.length;
   Set<String> get blockedUserIds => Set<String>.unmodifiable(_blockedUserIds);
+  List<MeshBlockedUser> get blockedUsers {
+    final values =
+        _blockedUserIds.map((id) {
+          final savedName = _blockedUserNames[id]?.trim();
+          return MeshBlockedUser(
+            id: id,
+            name: savedName == null || savedName.isEmpty ? id : savedName,
+          );
+        }).toList()..sort((a, b) {
+          final nameCompare = a.name.compareTo(b.name);
+          return nameCompare == 0 ? a.id.compareTo(b.id) : nameCompare;
+        });
+    return List<MeshBlockedUser>.unmodifiable(values);
+  }
+
   List<MeshModerationReport> get moderationReports =>
       List<MeshModerationReport>.unmodifiable(_moderationReports);
 
@@ -9156,6 +9378,9 @@ class MeshChatService extends ChangeNotifier {
       );
       final blockedUsers =
           prefs.getStringList(_blockedUsersPrefsKey) ?? const <String>[];
+      final blockedUserNames = _decodeStringMap(
+        prefs.getString(_blockedUserNamesPrefsKey),
+      );
       final hiddenMessages =
           prefs.getStringList(_hiddenMessagesPrefsKey) ?? const <String>[];
       final reportStrings =
@@ -9164,7 +9389,15 @@ class MeshChatService extends ChangeNotifier {
       _eulaAcceptedAt = acceptedAt;
       _blockedUserIds
         ..clear()
-        ..addAll(blockedUsers.where((id) => id.trim().isNotEmpty));
+        ..addAll(
+          blockedUsers.map((id) => id.trim()).where((id) => id.isNotEmpty),
+        );
+      _blockedUserNames
+        ..clear()
+        ..addAll(blockedUserNames)
+        ..removeWhere(
+          (id, name) => !_blockedUserIds.contains(id) || name.trim().isEmpty,
+        );
       _hiddenMessageIds
         ..clear()
         ..addAll(hiddenMessages.where((id) => id.startsWith('msg-')));
@@ -9796,20 +10029,55 @@ class MeshChatService extends ChangeNotifier {
   }
 
   void blockUser(String userId, {required String userName}) {
-    if (userId == _nodeId) {
+    final cleanId = userId.trim();
+    final cleanName = userName.trim();
+    final displayName = cleanName.isEmpty ? cleanId : cleanName;
+
+    if (cleanId == _nodeId) {
       _status = '不能封鎖自己。';
       notifyListeners();
       return;
     }
-    if (userId.trim().isEmpty) {
+    if (cleanId.isEmpty) {
       _status = '未能識別這個用戶。';
       notifyListeners();
       return;
     }
 
-    _blockedUserIds.add(userId);
+    _blockedUserIds.add(cleanId);
+    if (cleanName.isNotEmpty) {
+      _blockedUserNames[cleanId] = cleanName;
+    }
     _removeBlockedContent();
-    _status = '已封鎖 $userName，對方內容已從你的信息流隱藏。';
+    _status = '已封鎖 $displayName，對方內容已從你的信息流隱藏。';
+    notifyListeners();
+    unawaited(_saveBlockedUsers());
+  }
+
+  void unblockUser(String userId, {String? userName}) {
+    final cleanId = userId.trim();
+    if (cleanId.isEmpty) {
+      _status = '未能識別這個用戶。';
+      notifyListeners();
+      return;
+    }
+
+    final savedName = _blockedUserNames[cleanId]?.trim();
+    final cleanName = userName?.trim();
+    final displayName = cleanName != null && cleanName.isNotEmpty
+        ? cleanName
+        : savedName != null && savedName.isNotEmpty
+        ? savedName
+        : cleanId;
+
+    if (!_blockedUserIds.remove(cleanId)) {
+      _status = '$displayName 未在封鎖名單。';
+      notifyListeners();
+      return;
+    }
+
+    _blockedUserNames.remove(cleanId);
+    _status = '已解鎖 $displayName，之後收到的新內容會重新顯示。';
     notifyListeners();
     unawaited(_saveBlockedUsers());
   }
@@ -10991,9 +11259,17 @@ class MeshChatService extends ChangeNotifier {
   Future<void> _saveBlockedUsers() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(
-        _blockedUsersPrefsKey,
-        _blockedUserIds.toList()..sort(),
+      final blockedIds = _blockedUserIds.toList()..sort();
+      final blockedNames = <String, String>{
+        for (final id in blockedIds)
+          if ((_blockedUserNames[id] ?? '').trim().isNotEmpty)
+            id: _blockedUserNames[id]!.trim(),
+      };
+
+      await prefs.setStringList(_blockedUsersPrefsKey, blockedIds);
+      await prefs.setString(
+        _blockedUserNamesPrefsKey,
+        jsonEncode(blockedNames),
       );
     } on Object {
       // Tests and unsupported platforms may not have the preferences plugin.
@@ -11053,6 +11329,27 @@ class MeshChatService extends ChangeNotifier {
       return null;
     }
     return null;
+  }
+
+  static Map<String, String> _decodeStringMap(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return const <String, String>{};
+    }
+
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map) {
+        return <String, String>{
+          for (final entry in decoded.entries)
+            if (entry.key.toString().trim().isNotEmpty &&
+                entry.value.toString().trim().isNotEmpty)
+              entry.key.toString().trim(): entry.value.toString().trim(),
+        };
+      }
+    } on Object {
+      return const <String, String>{};
+    }
+    return const <String, String>{};
   }
 
   Future<List<String>> _loadLocalAddresses() async {
@@ -11200,6 +11497,13 @@ class MeshOnlineUser {
   final int creditScore;
   final bool likedByMe;
   final bool isSosActive;
+}
+
+class MeshBlockedUser {
+  const MeshBlockedUser({required this.id, required this.name});
+
+  final String id;
+  final String name;
 }
 
 class MeshSupply {

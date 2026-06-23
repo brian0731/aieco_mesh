@@ -193,6 +193,17 @@ void main() {
 
     mesh.blockUser('peer-1', userName: '惡意光點');
     expect(mesh.blockedUserIds, contains('peer-1'));
+    expect(mesh.blockedUsers.single.name, '惡意光點');
+
+    mesh.unblockUser('peer-1', userName: '惡意光點');
+    expect(mesh.blockedUserIds, isNot(contains('peer-1')));
+    expect(mesh.blockedUsers, isEmpty);
+    expect(mesh.status, contains('解鎖'));
+
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('mesh.blockedUsers'), isEmpty);
+    expect(prefs.getString('mesh.blockedUserNames'), '{}');
 
     await mesh.stop();
   });
