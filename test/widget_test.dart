@@ -165,6 +165,38 @@ void main() {
     expect(mesh.status, contains('未設定 relay'));
   });
 
+  test('MeshChatService enforces chat moderation controls', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+
+    final mesh = MeshChatService();
+    addTearDown(mesh.dispose);
+
+    expect(mesh.eulaAccepted, isFalse);
+    await mesh.acceptEula();
+    expect(mesh.eulaAccepted, isTrue);
+
+    final blocked = await mesh.sendMessage('這是色情內容');
+    expect(blocked, isFalse);
+    expect(mesh.messages, isEmpty);
+    expect(mesh.status, contains('安全過濾'));
+
+    final sent = await mesh.sendMessage('安全互助訊息');
+    expect(sent, isTrue);
+    expect(mesh.messages, hasLength(1));
+
+    final message = mesh.messages.single;
+    mesh.reportMessage(message, reason: '其他不當內容');
+
+    expect(mesh.messages, isEmpty);
+    expect(mesh.moderationReportCount, 1);
+    expect(mesh.status, contains('24 小時'));
+
+    mesh.blockUser('peer-1', userName: '惡意光點');
+    expect(mesh.blockedUserIds, contains('peer-1'));
+
+    await mesh.stop();
+  });
+
   test('MeshChatService marks local SOS in users and radar contacts', () async {
     final mesh = MeshChatService();
     addTearDown(mesh.dispose);
@@ -195,7 +227,9 @@ void main() {
   testWidgets('Propagation Light renders core chat controls', (
     WidgetTester tester,
   ) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'mesh.eulaAcceptedAt': DateTime.utc(2026).toIso8601String(),
+    });
 
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1;
@@ -227,11 +261,11 @@ void main() {
     expect(find.text('光之通道'), findsOneWidget);
     expect(find.text('光之雷達'), findsWidgets);
     expect(find.byTooltip('功能介紹'), findsOneWidget);
-    expect(find.text('社區網絡'), findsOneWidget);
+    expect(find.byTooltip('社區網絡'), findsOneWidget);
     expect(find.text('SOS 燈'), findsOneWidget);
-    expect(find.text('Wi‑Fi Direct 邀請'), findsOneWidget);
-    expect(find.text('掃手機'), findsWidgets);
-    expect(find.text('發出邀請'), findsOneWidget);
+    expect(find.textContaining('MESH 自動連接'), findsOneWidget);
+    expect(find.text('掃 P2P 並連接'), findsOneWidget);
+    expect(find.textContaining('發出 P2P 連接邀請'), findsOneWidget);
     expect(find.textContaining('請先開啟 WiFi'), findsOneWidget);
     expect(find.textContaining('重新開啟光之網絡'), findsOneWidget);
 
@@ -438,7 +472,7 @@ void main() {
     expect(find.text('請先定位'), findsOneWidget);
     expect(find.text('定位'), findsOneWidget);
 
-    await tester.tap(find.text('社區網絡'));
+    await tester.tap(find.byTooltip('社區網絡'));
     await tester.pumpAndSettle();
 
     expect(find.text('社區網絡'), findsOneWidget);
