@@ -116,8 +116,40 @@ jobs:
           keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
           keychain_password="$(openssl rand -base64 32)"
 
-          printf "%s" "$IOS_DISTRIBUTION_CERTIFICATE_BASE64" | base64 -d > "$certificate_path"
-          printf "%s" "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -d > "$profile_path"
+          decode_base64_secret() {
+            local secret_name="$1"
+            local output_path="$2"
+            local log_path="$RUNNER_TEMP/${secret_name}.decode.log"
+
+            printf "%s" "${!secret_name}" | tr -d '[:space:]' | base64 -D > "$output_path" 2> "$log_path" || {
+              echo "::error::$secret_name is not valid base64. Generate it from the raw file and paste only the base64 text."
+              cat "$log_path"
+              exit 1
+            }
+
+            if [[ ! -s "$output_path" ]]; then
+              echo "::error::$secret_name decoded to an empty file."
+              exit 1
+            fi
+          }
+
+          decode_base64_secret IOS_DISTRIBUTION_CERTIFICATE_BASE64 "$certificate_path"
+          decode_base64_secret IOS_PROVISIONING_PROFILE_BASE64 "$profile_path"
+
+          openssl pkcs12 \
+            -info \
+            -in "$certificate_path" \
+            -passin "pass:$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+            -noout > /dev/null 2> "$RUNNER_TEMP/p12-validate.log" || {
+              echo "::error::Apple Distribution .p12 or IOS_DISTRIBUTION_CERTIFICATE_PASSWORD is invalid."
+              cat "$RUNNER_TEMP/p12-validate.log"
+              exit 1
+            }
+
+          security cms -D -i "$profile_path" > "$profile_plist_path" || {
+            echo "::error::IOS_PROVISIONING_PROFILE_BASE64 is not a valid .mobileprovision file."
+            exit 1
+          }
 
           security create-keychain -p "$keychain_password" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
@@ -136,7 +168,6 @@ jobs:
             "$keychain_path"
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          security cms -D -i "$profile_path" > "$profile_plist_path"
           profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print UUID' "$profile_plist_path")"
           profile_name="$(/usr/libexec/PlistBuddy -c 'Print Name' "$profile_plist_path")"
           team_id="$(/usr/libexec/PlistBuddy -c 'Print TeamIdentifier:0' "$profile_plist_path")"
@@ -152,7 +183,7 @@ jobs:
         run: |
           mkdir -p "$HOME/.appstoreconnect/private_keys"
           api_key_path="$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
-          printf "%s" "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 -d > "$api_key_path"
+          printf "%s" "$APP_STORE_CONNECT_API_KEY_BASE64" | tr -d '[:space:]' | base64 -D > "$api_key_path"
           chmod 600 "$api_key_path"
 
       - name: Build Flutter iOS app
