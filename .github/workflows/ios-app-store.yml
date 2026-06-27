@@ -27,6 +27,7 @@ jobs:
   build-and-upload:
     name: Build and Upload IPA
     runs-on: macos-latest
+    environment: apple
     timeout-minutes: 60
 
     env:
