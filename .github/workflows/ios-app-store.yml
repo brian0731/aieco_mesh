@@ -71,6 +71,12 @@ jobs:
               missing=1
             fi
           done
+          IOS_BUNDLE_ID="$(printf "%s" "$IOS_BUNDLE_ID" | tr -d '[:space:]')"
+          if [[ -z "$IOS_BUNDLE_ID" ]]; then
+            echo "::error::IOS_BUNDLE_ID is empty after trimming whitespace."
+            missing=1
+          fi
+          echo "IOS_BUNDLE_ID=$IOS_BUNDLE_ID" >> "$GITHUB_ENV"
           exit "$missing"
 
       - name: Resolve build version
@@ -243,17 +249,21 @@ jobs:
       - name: Archive signed iOS app
         shell: bash
         run: |
+          {
+            printf '\n'
+            printf 'DEVELOPMENT_TEAM=%s\n' "$APPLE_TEAM_ID"
+            printf 'CODE_SIGN_STYLE=Manual\n'
+            printf 'CODE_SIGN_IDENTITY=Apple Distribution\n'
+            printf 'PROVISIONING_PROFILE_SPECIFIER=%s\n' "$IOS_PROFILE_NAME"
+          } >> ios/Flutter/Release.xcconfig
+
           xcodebuild clean archive \
             -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
             -sdk iphoneos \
             -archivePath build/ios/archive/Runner.xcarchive \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            APP_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$IOS_PROFILE_NAME"
+            APP_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID"
 
       - name: Export signed IPA
         shell: bash
