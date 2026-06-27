@@ -255,6 +255,10 @@ jobs:
             printf 'CODE_SIGN_STYLE=Manual\n'
             printf 'CODE_SIGN_IDENTITY=Apple Distribution\n'
             printf 'PROVISIONING_PROFILE_SPECIFIER=%s\n' "$IOS_PROFILE_NAME"
+            printf 'FLUTTER_BUILD_NAME=%s\n' "$IOS_BUILD_NAME"
+            printf 'FLUTTER_BUILD_NUMBER=%s\n' "$IOS_BUILD_NUMBER"
+            printf 'MARKETING_VERSION=%s\n' "$IOS_BUILD_NAME"
+            printf 'CURRENT_PROJECT_VERSION=%s\n' "$IOS_BUILD_NUMBER"
           } >> ios/Flutter/Release.xcconfig
 
           xcodebuild clean archive \
@@ -263,7 +267,11 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -archivePath build/ios/archive/Runner.xcarchive \
-            APP_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID"
+            APP_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID" \
+            FLUTTER_BUILD_NAME="$IOS_BUILD_NAME" \
+            FLUTTER_BUILD_NUMBER="$IOS_BUILD_NUMBER" \
+            MARKETING_VERSION="$IOS_BUILD_NAME" \
+            CURRENT_PROJECT_VERSION="$IOS_BUILD_NUMBER"
 
       - name: Export signed IPA
         shell: bash
@@ -297,6 +305,35 @@ jobs:
             -archivePath build/ios/archive/Runner.xcarchive \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             -exportPath build/ios/export
+
+      - name: Verify exported IPA version
+        shell: bash
+        run: |
+          ipa_path="$(find build/ios/export -name '*.ipa' -print -quit)"
+          if [[ -z "$ipa_path" ]]; then
+            echo "::error::No IPA file found in build/ios/export."
+            exit 1
+          fi
+
+          verify_dir="$RUNNER_TEMP/ipa-verify"
+          rm -rf "$verify_dir"
+          mkdir -p "$verify_dir"
+          unzip -q "$ipa_path" -d "$verify_dir"
+
+          app_plist="$(find "$verify_dir/Payload" -path '*.app/Info.plist' -print -quit)"
+          if [[ -z "$app_plist" ]]; then
+            echo "::error::Unable to find app Info.plist inside exported IPA."
+            exit 1
+          fi
+
+          actual_version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app_plist")"
+          actual_build="$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app_plist")"
+          echo "Exported IPA version: $actual_version ($actual_build)."
+
+          if [[ "$actual_version" != "$IOS_BUILD_NAME" || "$actual_build" != "$IOS_BUILD_NUMBER" ]]; then
+            echo "::error::Exported IPA version mismatch. Expected $IOS_BUILD_NAME ($IOS_BUILD_NUMBER), got $actual_version ($actual_build)."
+            exit 1
+          fi
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
