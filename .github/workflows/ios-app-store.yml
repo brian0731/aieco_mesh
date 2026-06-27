@@ -64,7 +64,9 @@ jobs:
             IOS_PROVISIONING_PROFILE_BASE64 \
             APP_STORE_CONNECT_API_KEY_ID \
             APP_STORE_CONNECT_API_ISSUER_ID \
-            APP_STORE_CONNECT_API_KEY_BASE64
+            APP_STORE_CONNECT_API_KEY_BASE64 \
+            AIECO_ONLINE_RELAY_URL \
+            GOOGLE_MAPS_API_KEY
           do
             if [[ -z "${!name}" ]]; then
               echo "::error::GitHub secret $name is not configured."
@@ -233,9 +235,11 @@ jobs:
         run: |
           dart_defines=()
           if [[ -n "$AIECO_ONLINE_RELAY_URL" ]]; then
+            echo "Including dart define AIECO_ONLINE_RELAY_URL."
             dart_defines+=(--dart-define "AIECO_ONLINE_RELAY_URL=$AIECO_ONLINE_RELAY_URL")
           fi
           if [[ -n "$GOOGLE_MAPS_API_KEY" ]]; then
+            echo "Including dart define GOOGLE_MAPS_API_KEY."
             dart_defines+=(--dart-define "GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY")
           fi
 
