@@ -156,11 +156,47 @@ jobs:
           security unlock-keychain -p "$keychain_password" "$keychain_path"
           security list-keychains -d user -s "$keychain_path"
           security default-keychain -s "$keychain_path"
-          security import "$certificate_path" \
-            -k "$keychain_path" \
-            -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security
+          import_certificate() {
+            local import_path="$1"
+            security import "$import_path" \
+              -k "$keychain_path" \
+              -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+              -T /usr/bin/codesign \
+              -T /usr/bin/security
+          }
+
+          if ! import_certificate "$certificate_path"; then
+            echo "::warning::Direct .p12 import failed. Re-wrapping certificate for macOS security import compatibility."
+            extracted_pem_path="$RUNNER_TEMP/distribution.pem"
+            legacy_certificate_path="$RUNNER_TEMP/distribution-legacy.p12"
+
+            openssl pkcs12 \
+              -in "$certificate_path" \
+              -passin "pass:$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+              -nodes \
+              -out "$extracted_pem_path" > /dev/null 2> "$RUNNER_TEMP/p12-extract.log" || {
+                echo "::error::Unable to extract the .p12. Check IOS_DISTRIBUTION_CERTIFICATE_PASSWORD."
+                exit 1
+              }
+
+            openssl pkcs12 \
+              -export \
+              -in "$extracted_pem_path" \
+              -out "$legacy_certificate_path" \
+              -passout "pass:$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+              -name "Apple Distribution" \
+              -certpbe PBE-SHA1-3DES \
+              -keypbe PBE-SHA1-3DES \
+              -macalg sha1 > /dev/null 2> "$RUNNER_TEMP/p12-rewrap.log" || {
+                echo "::error::Unable to re-wrap the .p12 for macOS security import."
+                exit 1
+              }
+
+            import_certificate "$legacy_certificate_path" || {
+              echo "::error::macOS security import failed after re-wrapping. Regenerate the .p12 using OpenSSL -legacy or Keychain Access."
+              exit 1
+            }
+          fi
           security set-key-partition-list \
             -S apple-tool:,apple:,codesign: \
             -s \
