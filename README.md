@@ -146,3 +146,9 @@ Debug APK 會輸出到：
 ```text
 build\app\outputs\flutter-apk\app-debug.apk
 ```
+
+## iOS GitHub Actions 上架
+
+已加入 GitHub Actions workflow：`.github/workflows/ios-app-store.yml`。設定 Apple 簽署和 App Store Connect secrets 後，可用 `macos-latest` 自動編譯、簽署 IPA 並上傳到 App Store Connect。
+
+設定方式見 [docs/IOS_APP_STORE_GITHUB_ACTIONS.md](docs/IOS_APP_STORE_GITHUB_ACTIONS.md)。
