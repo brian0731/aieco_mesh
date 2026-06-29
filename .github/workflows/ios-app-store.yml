@@ -26,7 +26,7 @@ concurrency:
 jobs:
   build-and-upload:
     name: Build and Upload IPA
-    runs-on: macos-latest
+    runs-on: macos-26
     environment: apple
     timeout-minutes: 60
 
@@ -52,6 +52,18 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Verify Xcode SDK
+        shell: bash
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+          iphoneos_sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "iPhoneOS SDK version: $iphoneos_sdk_version"
+          if [[ "${iphoneos_sdk_version%%.*}" -lt 26 ]]; then
+            echo "::error::App Store Connect requires iOS 26 SDK or later. Current iPhoneOS SDK is $iphoneos_sdk_version."
+            exit 1
+          fi
 
       - name: Verify required secrets
         shell: bash

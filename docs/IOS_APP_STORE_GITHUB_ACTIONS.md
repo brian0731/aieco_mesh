@@ -2,7 +2,7 @@
 
 本專案已加入 `.github/workflows/ios-app-store.yml`。
 
-Workflow 會在 `macos-latest` runner 上編譯 Flutter iOS app、簽署 IPA、把 IPA 存成 GitHub Actions artifact，並上傳到 App Store Connect。
+Workflow 會在 `macos-26` runner 上編譯 Flutter iOS app、簽署 IPA、把 IPA 存成 GitHub Actions artifact，並上傳到 App Store Connect。此 runner 需提供 Xcode 26 / iOS 26 SDK 或更新版本，符合 App Store Connect 上傳要求。
 
 ## 必填 GitHub Secrets
 
