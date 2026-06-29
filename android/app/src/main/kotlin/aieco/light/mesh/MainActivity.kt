@@ -2,6 +2,7 @@ package aieco.light.mesh
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
@@ -434,6 +435,7 @@ private class WifiMeshBridge(private val activity: Activity) {
             "openBluetoothSettings" -> openBluetoothSettings(result)
             "openBluetoothTetherSettings" -> openBluetoothTetherSettings(result)
             "openLocationSettings" -> openLocationSettings(result)
+            "openExternalUrl" -> openExternalUrl(call.argument<String>("url"), result)
             "openAppSettings" -> {
                 val intent = Intent(
                     Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -479,6 +481,29 @@ private class WifiMeshBridge(private val activity: Activity) {
                 }
             }
             else -> result.notImplemented()
+        }
+    }
+
+    private fun openExternalUrl(url: String?, result: MethodChannel.Result) {
+        if (url.isNullOrBlank()) {
+            result.error("invalid_url", "缺少連結。", null)
+            return
+        }
+        val uri = Uri.parse(url)
+        val scheme = uri.scheme?.lowercase()
+        if (scheme != "https" && scheme != "http") {
+            result.error("invalid_url", "只可開啟 http 或 https 連結。", null)
+            return
+        }
+
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+        }
+        try {
+            activity.startActivity(intent)
+            result.success(true)
+        } catch (error: ActivityNotFoundException) {
+            result.error("url_unavailable", "未能打開連結。", error.localizedMessage)
         }
     }
 

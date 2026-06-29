@@ -272,7 +272,7 @@ void main() {
     expect(find.text('光之通道'), findsOneWidget);
     expect(find.text('光之雷達'), findsWidgets);
     expect(find.byTooltip('功能介紹'), findsOneWidget);
-    expect(find.byTooltip('社區網絡'), findsOneWidget);
+    expect(find.byTooltip('社區網絡'), findsNothing);
     expect(find.text('SOS 燈'), findsOneWidget);
     expect(find.textContaining('MESH 自動連接'), findsOneWidget);
     expect(find.text('掃 P2P 並連接'), findsOneWidget);
@@ -483,11 +483,14 @@ void main() {
     expect(find.text('請先定位'), findsOneWidget);
     expect(find.text('定位'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('社區網絡'));
+    await tester.tap(find.text('社區資訊'));
     await tester.pumpAndSettle();
 
-    expect(find.text('社區網絡'), findsOneWidget);
-    expect(find.text('SOS 燈'), findsNothing);
-    expect(find.text('https://www.aieco.hk'), findsOneWidget);
+    expect(find.text('社區資訊'), findsWidgets);
+    expect(find.text('社區救生圈'), findsOneWidget);
+    expect(find.text('社區共鳴牆'), findsOneWidget);
+    expect(find.text('守望地圖'), findsOneWidget);
+    expect(find.text('SOS 燈'), findsOneWidget);
+    expect(find.text('https://www.aieco.hk'), findsNothing);
   });
 }

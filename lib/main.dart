@@ -13,6 +13,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 const String _aiecoWebUrl = 'https://www.aieco.hk';
+const String _communityLifebuoyUrl =
+    'https://www.aieco.hk/community/lifebuoy';
+const String _communityWallUrl = 'https://www.aieco.hk/community/wall';
+const String _communityShareUrl = 'https://www.aieco.hk/community/share';
+const String _communityNewsHost = 'www.aieco.hk';
+const String _communityNewsApiPath = '/api/blogs';
+const String _communityNewsCategory = 'community-info';
+const int _communityNewsLimit = 50;
+const int _communityNewsPageSize = 5;
 const String _launchImageAsset = 'assets/images/launch_fullscreen.png';
 const String _googleMapsApiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
 const String _googleMapsMapId = String.fromEnvironment('GOOGLE_MAPS_MAP_ID');
@@ -29,6 +38,57 @@ const double _hongKongCenterLatitude = 22.3193;
 const double _hongKongCenterLongitude = 114.1694;
 const String _moderationContactEmail = 'info@aieco.hk';
 const String _moderationResponseWindow = '24 小時';
+
+class _ExternalUrlLauncher {
+  const _ExternalUrlLauncher._();
+
+  static const MethodChannel _channel = MethodChannel(
+    'hk.aieco.propagation_light/wifi_mesh',
+  );
+
+  static Future<bool> open(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !_isExternalHttpUrl(uri)) {
+      return false;
+    }
+
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return false;
+    }
+
+    try {
+      final result = await _channel.invokeMethod<Object?>(
+        'openExternalUrl',
+        <String, Object?>{'url': uri.toString()},
+      );
+      return result == true;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+}
+
+bool _isExternalHttpUrl(Uri uri) {
+  final scheme = uri.scheme.toLowerCase();
+  return scheme == 'https' || scheme == 'http';
+}
+
+Future<void> _openExternalUrl(BuildContext context, String url) async {
+  final opened = await _ExternalUrlLauncher.open(url);
+  if (!context.mounted || opened) {
+    return;
+  }
+
+  await Clipboard.setData(ClipboardData(text: url));
+  if (!context.mounted) {
+    return;
+  }
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('未能打開連結，已複製：$url')),
+  );
+}
 
 enum MeshNetworkMode { online, offline }
 
@@ -891,14 +951,6 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     _scrollMessagesToEnd();
   }
 
-  void _openCommunityNetwork() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CommunityNetworkPage(enabled: widget.enableWebView),
-      ),
-    );
-  }
-
   void _openFeatureGuide() {
     showModalBottomSheet<void>(
       context: context,
@@ -1028,11 +1080,6 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                 onPressed: _openFeatureGuide,
                 icon: const Icon(Icons.info_outline),
               ),
-              IconButton(
-                tooltip: '社區網絡',
-                onPressed: _openCommunityNetwork,
-                icon: const Icon(Icons.language_outlined),
-              ),
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: _SosLightButton(controller: _sosLight),
@@ -1044,7 +1091,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                 Tab(icon: Icon(Icons.hub_outlined), text: '光之網絡'),
                 Tab(icon: Icon(Icons.forum_outlined), text: '光之通道'),
                 Tab(icon: Icon(Icons.radar), text: '光之雷達'),
-                Tab(icon: Icon(Icons.info_outline), text: '社區資訊'),
+                Tab(icon: Icon(Icons.public), text: '社區資訊'),
               ],
             ),
           ),
@@ -1094,7 +1141,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                     ),
                     _ChatTabPage(chatPanel: chatPanel),
                     _RadarTabPage(radarPanel: radarPanel),
-                    _CommunityInfoTabPage(enableWebView: widget.enableWebView),
+                    _CommunityInfoTabPage(enableNews: widget.enableWebView),
                   ],
                 );
               },
@@ -1313,20 +1360,15 @@ const Color _communityInfoMuted = Color(0xFF566B60);
 const Color _communityInfoBorder = Color(0xFFE0E5DE);
 
 class _CommunityInfoTabPage extends StatelessWidget {
-  const _CommunityInfoTabPage({required this.enableWebView});
+  const _CommunityInfoTabPage({this.enableNews = true});
 
-  final bool enableWebView;
+  final bool enableNews;
 
   static const _aedMapUrl =
       'https://www.google.com/maps/d/u/0/viewer?mid=1ufgVocWH6anSLW3jvn6ic5UOq5034WPW';
 
-  void _openAedMap(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            CommunityNetworkPage(enabled: enableWebView, url: _aedMapUrl),
-      ),
-    );
+  Future<void> _openAedMap(BuildContext context) {
+    return _openExternalUrl(context, _aedMapUrl);
   }
 
   @override
@@ -1355,6 +1397,12 @@ class _CommunityInfoTabPage extends StatelessWidget {
                   children: [
                     const _CommunityInfoHeader(),
                     const SizedBox(height: 10),
+                    const _CommunityLinkGrid(),
+                    const SizedBox(height: 10),
+                    if (enableNews) ...[
+                      const _CommunityNewsSection(),
+                      const SizedBox(height: 10),
+                    ],
                     const _CommunityInfoHighlights(),
                     const SizedBox(height: 10),
                     _InfoCard(
@@ -1464,7 +1512,7 @@ class _CommunityInfoTabPage extends StatelessWidget {
                         ('', '繼續心外壓，直到救護員到場、傷者恢復或現場不安全。'),
                       ],
                       action: FilledButton.icon(
-                        onPressed: () => _openAedMap(context),
+                        onPressed: () => unawaited(_openAedMap(context)),
                         icon: const Icon(Icons.pin_drop_outlined, size: 18),
                         label: const Text('AED 地圖'),
                         style: FilledButton.styleFrom(
@@ -1557,6 +1605,988 @@ class _CommunityInfoHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CommunityLinkGrid extends StatelessWidget {
+  const _CommunityLinkGrid();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : _communityInfoMaxWidth;
+        final isWide = maxWidth >= 620;
+        final tileWidth = isWide ? (maxWidth - 16) / 3 : maxWidth;
+
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            SizedBox(
+              width: tileWidth,
+              child: const _CommunityLinkTile(
+                icon: Icons.volunteer_activism_outlined,
+                color: Color(0xFFB71C1C),
+                title: '社區救生圈',
+                body: '互助求援和支援資訊',
+                url: _communityLifebuoyUrl,
+              ),
+            ),
+            SizedBox(
+              width: tileWidth,
+              child: const _CommunityLinkTile(
+                icon: Icons.forum_outlined,
+                color: Color(0xFF00695C),
+                title: '社區共鳴牆',
+                body: '街坊留言與社區回應',
+                url: _communityWallUrl,
+              ),
+            ),
+            SizedBox(
+              width: tileWidth,
+              child: const _CommunityLinkTile(
+                icon: Icons.map_outlined,
+                color: Color(0xFF1565C0),
+                title: '守望地圖',
+                body: '查看和分享附近狀況',
+                url: _communityShareUrl,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CommunityLinkTile extends StatelessWidget {
+  const _CommunityLinkTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.body,
+    required this.url,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String body;
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: _communityInfoBorder),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => unawaited(_openExternalUrl(context, url)),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 21),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: _communityInfoInk,
+                        fontWeight: FontWeight.w900,
+                        height: 1.15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      body,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _communityInfoMuted,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.open_in_new, color: color, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityNewsSection extends StatefulWidget {
+  const _CommunityNewsSection();
+
+  @override
+  State<_CommunityNewsSection> createState() => _CommunityNewsSectionState();
+}
+
+class _CommunityNewsSectionState extends State<_CommunityNewsSection> {
+  final _repository = const _CommunityNewsRepository();
+  late Future<List<_CommunityNewsItem>> _future = _repository.fetchLatest();
+  var _page = 0;
+
+  void _refresh() {
+    setState(() {
+      _page = 0;
+      _future = _repository.fetchLatest();
+    });
+  }
+
+  void _openArticle(_CommunityNewsItem item) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _CommunityNewsArticlePage(item: item),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _communityInfoBorder),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F17211E),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D7C66).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.newspaper_outlined,
+                    color: Color(0xFF0D7C66),
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '社區最新消息',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: _communityInfoInk,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '重新整理',
+                  onPressed: _refresh,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            FutureBuilder<List<_CommunityNewsItem>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return _CommunityNewsMessage(
+                    icon: Icons.cloud_off_outlined,
+                    message: _communityNewsErrorMessage(snapshot.error),
+                  );
+                }
+
+                final items = snapshot.data ?? const <_CommunityNewsItem>[];
+                if (items.isEmpty) {
+                  return const _CommunityNewsMessage(
+                    icon: Icons.article_outlined,
+                    message: '暫時未有社區消息。',
+                  );
+                }
+
+                final pageCount = max(
+                  1,
+                  (items.length / _communityNewsPageSize).ceil(),
+                );
+                final page = _page.clamp(0, pageCount - 1).toInt();
+                final start = page * _communityNewsPageSize;
+                final pageItems = items
+                    .skip(start)
+                    .take(_communityNewsPageSize)
+                    .toList();
+
+                return Column(
+                  children: [
+                    for (var index = 0; index < pageItems.length; index += 1)
+                      _CommunityNewsTile(
+                        item: pageItems[index],
+                        onTap: () => _openArticle(pageItems[index]),
+                      ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          '第 ${page + 1} / $pageCount 頁 · ${items.length} 條',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: _communityInfoMuted),
+                        ),
+                        const Spacer(),
+                        IconButton.outlined(
+                          tooltip: '上一頁',
+                          onPressed: page == 0
+                              ? null
+                              : () => setState(() => _page = page - 1),
+                          icon: const Icon(Icons.chevron_left),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.outlined(
+                          tooltip: '下一頁',
+                          onPressed: page >= pageCount - 1
+                              ? null
+                              : () => setState(() => _page = page + 1),
+                          icon: const Icon(Icons.chevron_right),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityNewsMessage extends StatelessWidget {
+  const _CommunityNewsMessage({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFBF7),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _communityInfoBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: _communityInfoMuted, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: _communityInfoMuted,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunityNewsTile extends StatelessWidget {
+  const _CommunityNewsTile({required this.item, required this.onTap});
+
+  final _CommunityNewsItem item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0F2E9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.article_outlined,
+                  color: Color(0xFF0D7C66),
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: _communityInfoInk,
+                        fontWeight: FontWeight.w800,
+                        height: 1.22,
+                      ),
+                    ),
+                    if (item.summary.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        item.summary,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: _communityInfoMuted,
+                          height: 1.28,
+                        ),
+                      ),
+                    ],
+                    if (item.dateLabel.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        item.dateLabel,
+                        style: Theme.of(context).textTheme.labelSmall
+                            ?.copyWith(
+                              color: const Color(0xFF7A8A82),
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.chevron_right,
+                color: _communityInfoMuted,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityNewsArticlePage extends StatefulWidget {
+  const _CommunityNewsArticlePage({required this.item});
+
+  final _CommunityNewsItem item;
+
+  @override
+  State<_CommunityNewsArticlePage> createState() =>
+      _CommunityNewsArticlePageState();
+}
+
+class _CommunityNewsArticlePageState extends State<_CommunityNewsArticlePage> {
+  final _repository = const _CommunityNewsRepository();
+  late Future<_CommunityNewsArticle> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _fetchArticle();
+  }
+
+  Future<_CommunityNewsArticle> _fetchArticle() {
+    return _repository.fetchArticle(widget.item.slug, fallback: widget.item);
+  }
+
+  void _retry() {
+    setState(() {
+      _future = _fetchArticle();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.item.title)),
+      body: FutureBuilder<_CommunityNewsArticle>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.cloud_off_outlined,
+                      color: _communityInfoMuted,
+                      size: 34,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _communityNewsErrorMessage(snapshot.error),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: _communityInfoMuted,
+                        height: 1.38,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重試'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final article = snapshot.data;
+          if (article == null) {
+            return const Center(child: Text('未能讀取文章。'));
+          }
+          return _CommunityNewsArticleWebView(article: article);
+        },
+      ),
+    );
+  }
+}
+
+class _CommunityNewsArticleWebView extends StatefulWidget {
+  const _CommunityNewsArticleWebView({required this.article});
+
+  final _CommunityNewsArticle article;
+
+  @override
+  State<_CommunityNewsArticleWebView> createState() =>
+      _CommunityNewsArticleWebViewState();
+}
+
+class _CommunityNewsArticleWebViewState
+    extends State<_CommunityNewsArticleWebView> {
+  late final WebViewController _controller;
+  var _progress = 0;
+  var _htmlLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.disabled)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (progress) {
+            if (mounted) {
+              setState(() => _progress = progress);
+            }
+          },
+          onPageFinished: (_) {
+            if (mounted) {
+              setState(() {
+                _htmlLoaded = true;
+                _progress = 100;
+              });
+            }
+          },
+          onNavigationRequest: (request) {
+            final uri = Uri.tryParse(request.url);
+            if (_htmlLoaded &&
+                request.isMainFrame &&
+                uri != null &&
+                _isExternalHttpUrl(uri)) {
+              unawaited(_openExternalUrl(context, request.url));
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadHtmlString(
+        _communityNewsDocument(widget.article),
+        baseUrl: _aiecoWebUrl,
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(child: WebViewWidget(controller: _controller)),
+        if (_progress < 100)
+          Positioned(
+            left: 0,
+            top: 0,
+            right: 0,
+            child: LinearProgressIndicator(
+              value: _progress == 0 ? null : _progress / 100,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _CommunityNewsRepository {
+  const _CommunityNewsRepository();
+
+  Future<List<_CommunityNewsItem>> fetchLatest() async {
+    final uri = Uri.https(_communityNewsHost, _communityNewsApiPath, {
+      'category': _communityNewsCategory,
+      'limit': _communityNewsLimit.toString(),
+      'page': '1',
+    });
+    final decoded = await _getJson(uri);
+    final rows = _extractList(decoded);
+    final items = rows
+        .whereType<Map<dynamic, dynamic>>()
+        .map(_CommunityNewsItem.fromMap)
+        .where((item) => item.slug.isNotEmpty && item.title.isNotEmpty)
+        .toList()
+      ..sort(_sortCommunityNews);
+    return items.take(_communityNewsLimit).toList();
+  }
+
+  Future<_CommunityNewsArticle> fetchArticle(
+    String slug, {
+    required _CommunityNewsItem fallback,
+  }) async {
+    final uri = Uri(
+      scheme: 'https',
+      host: _communityNewsHost,
+      pathSegments: const ['api', 'blogs'] + [slug],
+    );
+    final decoded = await _getJson(uri);
+    final map = _extractMap(decoded);
+    return _CommunityNewsArticle.fromMap(map, fallback: fallback);
+  }
+
+  Future<Object?> _getJson(Uri uri) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    try {
+      final request = await client.getUrl(uri).timeout(
+        const Duration(seconds: 12),
+      );
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      final response = await request.close().timeout(
+        const Duration(seconds: 18),
+      );
+      final body = await response.transform(utf8.decoder).join().timeout(
+        const Duration(seconds: 18),
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw _CommunityNewsException(
+          '最新消息暫時未能讀取（HTTP ${response.statusCode}）。',
+        );
+      }
+      return jsonDecode(body);
+    } on TimeoutException {
+      throw const _CommunityNewsException('連線逾時，請稍後再試。');
+    } on SocketException {
+      throw const _CommunityNewsException('未能連接社區資訊伺服器。');
+    } on FormatException {
+      throw const _CommunityNewsException('社區資訊格式暫時未能讀取。');
+    } finally {
+      client.close(force: true);
+    }
+  }
+}
+
+class _CommunityNewsItem {
+  const _CommunityNewsItem({
+    required this.slug,
+    required this.title,
+    required this.summary,
+    required this.publishedAt,
+  });
+
+  factory _CommunityNewsItem.fromMap(Map raw) {
+    final map = _stringMap(raw);
+    final title =
+        _readCommunityString(map, const [
+          'title',
+          'name',
+          'headline',
+          'subject',
+        ]) ??
+        '';
+    final summarySource = _readCommunityString(map, const [
+      'excerpt',
+      'summary',
+      'description',
+      'intro',
+      'metaDescription',
+      'content',
+      'body',
+    ]);
+
+    return _CommunityNewsItem(
+      slug: _readCommunityString(map, const ['slug', 'id']) ?? '',
+      title: title,
+      summary: _stripHtml(summarySource ?? ''),
+      publishedAt: _readCommunityDate(map),
+    );
+  }
+
+  final String slug;
+  final String title;
+  final String summary;
+  final DateTime? publishedAt;
+
+  String get dateLabel => publishedAt == null
+      ? ''
+      : _formatCommunityNewsDate(publishedAt!.toLocal());
+}
+
+class _CommunityNewsArticle {
+  const _CommunityNewsArticle({
+    required this.slug,
+    required this.title,
+    required this.summary,
+    required this.html,
+    required this.publishedAt,
+  });
+
+  factory _CommunityNewsArticle.fromMap(
+    Map<String, Object?> map, {
+    required _CommunityNewsItem fallback,
+  }) {
+    final title =
+        _readCommunityString(map, const ['title', 'name', 'headline']) ??
+        fallback.title;
+    final summary =
+        _stripHtml(
+          _readCommunityString(map, const [
+                'excerpt',
+                'summary',
+                'description',
+                'intro',
+              ]) ??
+              fallback.summary,
+        );
+    final html =
+        _readCommunityString(map, const [
+          'contentHtml',
+          'html',
+          'bodyHtml',
+          'content',
+          'body',
+          'description',
+        ]) ??
+        summary;
+
+    return _CommunityNewsArticle(
+      slug: _readCommunityString(map, const ['slug', 'id']) ?? fallback.slug,
+      title: title,
+      summary: summary,
+      html: html,
+      publishedAt: _readCommunityDate(map) ?? fallback.publishedAt,
+    );
+  }
+
+  final String slug;
+  final String title;
+  final String summary;
+  final String html;
+  final DateTime? publishedAt;
+}
+
+class _CommunityNewsException implements Exception {
+  const _CommunityNewsException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+List<Object?> _extractList(Object? decoded) {
+  if (decoded is List) {
+    return decoded.cast<Object?>();
+  }
+  if (decoded is Map) {
+    for (final key in const [
+      'data',
+      'items',
+      'blogs',
+      'posts',
+      'results',
+      'rows',
+      'list',
+    ]) {
+      final value = decoded[key];
+      if (value is List) {
+        return value.cast<Object?>();
+      }
+      if (value is Map) {
+        final nested = _extractList(value);
+        if (nested.isNotEmpty) {
+          return nested;
+        }
+      }
+    }
+  }
+  return const <Object?>[];
+}
+
+Map<String, Object?> _extractMap(Object? decoded) {
+  if (decoded is Map) {
+    for (final key in const ['data', 'blog', 'post', 'item', 'result']) {
+      final value = decoded[key];
+      if (value is Map) {
+        return _stringMap(value);
+      }
+    }
+    return _stringMap(decoded);
+  }
+  return const <String, Object?>{};
+}
+
+Map<String, Object?> _stringMap(Map raw) {
+  final map = <String, Object?>{};
+  for (final entry in raw.entries) {
+    final key = entry.key;
+    if (key is String) {
+      map[key] = entry.value;
+    }
+  }
+  return map;
+}
+
+String? _readCommunityString(Map<String, Object?> map, List<String> keys) {
+  for (final key in keys) {
+    final value = map[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return _decodeHtmlEntities(value.trim());
+    }
+    if (value is num || value is bool) {
+      return value.toString();
+    }
+    if (value is Map) {
+      final nested = _readCommunityString(_stringMap(value), const [
+        'text',
+        'value',
+        'rendered',
+        'html',
+        'url',
+      ]);
+      if (nested != null && nested.isNotEmpty) {
+        return nested;
+      }
+    }
+  }
+  return null;
+}
+
+DateTime? _readCommunityDate(Map<String, Object?> map) {
+  final raw = _readCommunityString(map, const [
+    'publishedAt',
+    'published_at',
+    'publishAt',
+    'createdAt',
+    'created_at',
+    'updatedAt',
+    'updated_at',
+    'date',
+  ]);
+  if (raw == null || raw.isEmpty) {
+    return null;
+  }
+  final fromNumber = num.tryParse(raw);
+  if (fromNumber != null) {
+    final milliseconds = fromNumber > 100000000000
+        ? fromNumber.toInt()
+        : (fromNumber * 1000).toInt();
+    return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
+  }
+  return DateTime.tryParse(raw);
+}
+
+int _sortCommunityNews(_CommunityNewsItem left, _CommunityNewsItem right) {
+  final leftDate = left.publishedAt;
+  final rightDate = right.publishedAt;
+  if (leftDate == null && rightDate == null) {
+    return left.title.compareTo(right.title);
+  }
+  if (leftDate == null) {
+    return 1;
+  }
+  if (rightDate == null) {
+    return -1;
+  }
+  return rightDate.compareTo(leftDate);
+}
+
+String _formatCommunityNewsDate(DateTime time) {
+  final month = time.month.toString().padLeft(2, '0');
+  final day = time.day.toString().padLeft(2, '0');
+  return '${time.year}-$month-$day';
+}
+
+String _communityNewsErrorMessage(Object? error) {
+  if (error is _CommunityNewsException) {
+    return error.message;
+  }
+  return '社區最新消息暫時未能讀取。';
+}
+
+String _stripHtml(String value) {
+  final text = value
+      .replaceAll(RegExp(r'<script[\s\S]*?</script>', caseSensitive: false), ' ')
+      .replaceAll(RegExp(r'<style[\s\S]*?</style>', caseSensitive: false), ' ')
+      .replaceAll(RegExp(r'<[^>]+>'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return _decodeHtmlEntities(text);
+}
+
+String _decodeHtmlEntities(String value) {
+  return value
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&#x27;', "'");
+}
+
+String _communityNewsDocument(_CommunityNewsArticle article) {
+  final title = const HtmlEscape().convert(article.title);
+  final summary = const HtmlEscape().convert(article.summary);
+  final date = article.publishedAt == null
+      ? ''
+      : _formatCommunityNewsDate(article.publishedAt!.toLocal());
+  final content = _looksLikeHtml(article.html)
+      ? article.html
+      : '<p>${const HtmlEscape().convert(article.html).replaceAll('\n', '<br>')}</p>';
+
+  return '''
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f7f8f4;
+      color: #17211e;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.62;
+      overflow-wrap: anywhere;
+    }
+    article {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 20px 16px 34px;
+      background: #ffffff;
+      min-height: 100vh;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      line-height: 1.24;
+      letter-spacing: 0;
+    }
+    .meta {
+      color: #66756d;
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 18px;
+    }
+    .summary {
+      margin: 0 0 18px;
+      padding: 12px;
+      border-left: 4px solid #0d7c66;
+      background: #eef7f2;
+      color: #355248;
+      border-radius: 0 8px 8px 0;
+    }
+    img, video, iframe {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+    }
+    a { color: #0b6f5b; font-weight: 700; }
+    p { margin: 0 0 1em; }
+    ul, ol { padding-left: 1.35em; }
+    blockquote {
+      margin: 1em 0;
+      padding: 0.8em 1em;
+      border-left: 4px solid #d7ded7;
+      color: #566b60;
+      background: #fafbf7;
+    }
+  </style>
+</head>
+<body>
+  <article>
+    <h1>$title</h1>
+    ${date.isEmpty ? '' : '<div class="meta">$date</div>'}
+    ${summary.isEmpty ? '' : '<div class="summary">$summary</div>'}
+    $content
+  </article>
+</body>
+</html>
+''';
+}
+
+bool _looksLikeHtml(String value) {
+  return RegExp(r'<[a-z][\s\S]*>', caseSensitive: false).hasMatch(value);
 }
 
 class _CommunityInfoHighlights extends StatelessWidget {
@@ -2363,9 +3393,9 @@ class _FeatureGuideSheet extends StatelessWidget {
         _FeatureGuideSection(
           icon: Icons.wifi_tethering,
           title: '無線工具',
-          description: '光之網絡頁提供 Android 和 iOS 可用的本地連線工具，方便沒有外網時快速組網。',
+          description: '光之網絡頁提供手機本地連線工具，方便沒有外網時快速組網。',
           items: [
-            'Android：可要求 WiFi / nearby devices 權限、掃描 Wi-Fi Direct peer、建立 group、開本地熱點或連接附近 WiFi。',
+            '支援掃描 Wi-Fi Direct peer、建立 group、開本地熱點或連接附近 WiFi。',
             'iOS：可要求本地網絡權限，掃描同一 WiFi 內已開啟本 APP 的 LAN peer。',
             '進入同一網段後，傳播光會自動配對。',
           ],
@@ -4119,7 +5149,7 @@ String _googleRadarMapHtml({
 
     window.initRadarMap = initRadarMap;
     window.gm_authFailure = function() {
-      postMapError('Google Maps API key 被拒絕。請檢查 key、Maps JavaScript API、網域或 Android/iOS app 限制。');
+      postMapError('Google Maps API key 被拒絕。請檢查 key、Maps JavaScript API、網域或 app 限制。');
     };
     window.onerror = function(message, source, lineno, colno, error) {
       postMapError('Google Map JavaScript 錯誤：' + errorMessage(error || message));
@@ -5485,75 +6515,25 @@ int _districtOrder(String districtName) {
   return index == -1 ? _HongKongMapPainter._districts.length : index;
 }
 
-class CommunityNetworkPage extends StatefulWidget {
-  const CommunityNetworkPage({super.key, required this.enabled, this.url});
+class CommunityNetworkPage extends StatelessWidget {
+  const CommunityNetworkPage({super.key, this.enableNews = true});
 
-  final bool enabled;
-  final String? url;
-
-  @override
-  State<CommunityNetworkPage> createState() => _CommunityNetworkPageState();
-}
-
-class _CommunityNetworkPageState extends State<CommunityNetworkPage> {
-  WebViewController? _controller;
-  var _progress = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    if (!widget.enabled) {
-      return;
-    }
-
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (progress) => setState(() => _progress = progress),
-          onPageFinished: (_) {
-            if (!mounted) {
-              return;
-            }
-            setState(() => _progress = 100);
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(widget.url ?? _aiecoWebUrl));
-  }
+  final bool enableNews;
 
   @override
   Widget build(BuildContext context) {
-    final controller = _controller;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('社區網絡'),
+        title: const Text('社區資訊'),
         actions: [
-          if (controller != null)
-            IconButton(
-              tooltip: '重新載入',
-              onPressed: () => unawaited(controller.reload()),
-              icon: const Icon(Icons.refresh),
-            ),
+          IconButton(
+            tooltip: '開啟 AIECO.HK',
+            onPressed: () => unawaited(_openExternalUrl(context, _aiecoWebUrl)),
+            icon: const Icon(Icons.open_in_new),
+          ),
         ],
       ),
-      body: controller == null
-          ? const _WebPagePlaceholder()
-          : Stack(
-              children: [
-                Positioned.fill(child: WebViewWidget(controller: controller)),
-                if (_progress < 100)
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    right: 0,
-                    child: LinearProgressIndicator(
-                      value: _progress == 0 ? null : _progress / 100,
-                    ),
-                  ),
-              ],
-            ),
+      body: SafeArea(child: _CommunityInfoTabPage(enableNews: enableNews)),
     );
   }
 }
@@ -5693,7 +6673,7 @@ class _SosLightController extends ChangeNotifier {
       return null;
     }
     if (!Platform.isAndroid && !Platform.isIOS) {
-      _errorMessage = 'SOS 燈需要 Android / iOS 手機閃光燈。';
+      _errorMessage = 'SOS 燈需要支援閃光燈的手機。';
       _notify();
       return _errorMessage;
     }
@@ -5816,15 +6796,6 @@ class _SosPulse {
 
   final bool enabled;
   final Duration duration;
-}
-
-class _WebPagePlaceholder extends StatelessWidget {
-  const _WebPagePlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text(_aiecoWebUrl));
-  }
 }
 
 class _StatusAndPeersPanel extends StatelessWidget {
@@ -6218,7 +7189,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
           ssid: hotspot.ssid,
           passphrase: hotspot.preSharedKey,
           detail:
-              'Android 會分配實際 WiFi 名稱和密碼，不能固定為 aiecohk。其他手機請連接上方資料，再打開傳播光聊天。',
+              '系統會分配實際 WiFi 名稱和密碼，不能固定為 aiecohk。其他手機請連接上方資料，再打開傳播光聊天。',
         ),
       ],
       const SizedBox(height: 12),
@@ -6518,7 +7489,7 @@ class _BluetoothHotspotNotice extends StatelessWidget {
 
   String _statusText() {
     if (!controller.isAndroid) {
-      return '藍芽熱點目前只在 Android 系統設定開放。';
+      return '藍芽熱點目前只在支援的系統設定開放。';
     }
     if (!controller.bluetoothSupported) {
       return '此裝置未報告藍芽支援。';
@@ -8342,21 +9313,21 @@ class WifiMeshController extends ChangeNotifier {
   Future<void> openWifiSettings() async {
     await _callStatus(
       'openWifiSettings',
-      successMessage: isIOS ? '已打開 iOS 設定。' : '已打開 Android WiFi 設定。',
+      successMessage: isIOS ? '已打開 iOS 設定。' : '已打開 WiFi 設定。',
     );
   }
 
   Future<void> openBluetoothSettings() async {
     await _callStatus(
       'openBluetoothSettings',
-      successMessage: '已打開 Android 藍芽設定。',
+      successMessage: '已打開藍芽設定。',
     );
   }
 
   Future<void> openBluetoothTetherSettings() async {
     await _callStatus(
       'openBluetoothTetherSettings',
-      successMessage: '已打開 Android 熱點與網絡共享設定。',
+      successMessage: '已打開熱點與網絡共享設定。',
     );
   }
 
@@ -8383,7 +9354,7 @@ class WifiMeshController extends ChangeNotifier {
   }) async {
     if (!_nativeWirelessBridgeAvailable) {
       if (updateMessage) {
-        _lastMessage = '此功能需要 Android / iOS 原生 Wi‑Fi peer API。';
+        _lastMessage = '此功能需要手機系統提供原生 Wi‑Fi peer API。';
         notifyListeners();
       }
       return;
@@ -8403,7 +9374,7 @@ class WifiMeshController extends ChangeNotifier {
       }
     } on PlatformException catch (error) {
       if (updateMessage) {
-        _lastMessage = error.message ?? 'Android 無線操作失敗：${error.code}';
+        _lastMessage = error.message ?? '無線操作失敗：${error.code}';
         if (error.details is Map) {
           final details = Map<String, Object?>.from(error.details as Map);
           final missing = details['missing'];
@@ -8496,7 +9467,7 @@ class LightRadarController extends ChangeNotifier {
     bool quiet = false,
   }) async {
     if (!Platform.isAndroid) {
-      _message = '定位功能目前只在 Android 原生端開放。';
+      _message = '定位功能目前只在支援的原生端開放。';
       notifyListeners();
       return null;
     }

@@ -48,3 +48,6 @@ AuthKey_*.p8
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase/Google service config should stay local
+**/google-services.json

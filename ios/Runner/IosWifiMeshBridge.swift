@@ -62,6 +62,8 @@ final class IosWifiMeshBridge: NSObject {
     case "openAppSettings":
       openAppSettings()
       result(status(message: "已打開 app 權限設定。"))
+    case "openExternalUrl":
+      openExternalUrl(from: call.arguments, result: result)
     case "setTorch":
       setTorch(from: call.arguments, result: result)
     case "currentLocation":
@@ -297,6 +299,33 @@ final class IosWifiMeshBridge: NSObject {
 
   private func openAppSettings() {
     openSettings()
+  }
+
+  private func openExternalUrl(from arguments: Any?, result: @escaping FlutterResult) {
+    let args = arguments as? [String: Any]
+    let rawUrl = args?["url"] as? String ?? ""
+    guard let url = URL(string: rawUrl),
+          let scheme = url.scheme?.lowercased(),
+          scheme == "https" || scheme == "http" else {
+      result(FlutterError(
+        code: "invalid_url",
+        message: "只可開啟 http 或 https 連結。",
+        details: nil
+      ))
+      return
+    }
+
+    UIApplication.shared.open(url, options: [:]) { opened in
+      if opened {
+        result(true)
+      } else {
+        result(FlutterError(
+          code: "url_unavailable",
+          message: "未能打開連結。",
+          details: rawUrl
+        ))
+      }
+    }
   }
 
   private func startPathMonitoring() {
