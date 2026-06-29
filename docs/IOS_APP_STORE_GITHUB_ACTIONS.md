@@ -52,6 +52,11 @@ git push origin v1.0.6
 
 預設會使用 `pubspec.yaml` 的 version name，build number 則是 `pubspec build number + GitHub run number`。手動執行 workflow 時可以覆蓋 version 和 build number。
 
+若要上傳精確版本 `1.0.8 (118)`，請手動執行 workflow，並填入：
+
+- `build_name`: `1.0.8`
+- `build_number`: `118`
+
 ## App Store 注意事項
 
 Workflow 會把 build 上傳到 App Store Connect。Apple review submission、出口合規、價格、截圖、隱私資料和正式 release 時間仍需在 App Store Connect 完成，除非之後再加入額外的 metadata / review automation。
