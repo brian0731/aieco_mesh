@@ -27,15 +27,15 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>傳播光需要在沒有外網時連接同一 WiFi 或 mesh LAN 內的用戶作本地聊天。</string>
+	<string>傳播光需要在同一 WiFi 或 mesh LAN 尋找並連接已開啟本 App 的附近用戶，以便在沒有外網時本地聊天與同步光點資訊。</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_aieco-mesh._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>傳播光需要使用相機閃光燈發出 SOS 燈號。</string>
+	<string>傳播光只會使用相機閃光燈發出 SOS 求救燈號，不會拍照或錄影。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>傳播光需要使用你的位置，在離線香港地圖上顯示你的光點。</string>
+	<string>傳播光需要在你使用 App 時取得位置，在光之雷達顯示你的光點並與附近用戶分享大約位置。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

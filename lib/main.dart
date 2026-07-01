@@ -13,8 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 const String _aiecoWebUrl = 'https://www.aieco.hk';
-const String _communityLifebuoyUrl =
-    'https://www.aieco.hk/community/lifebuoy';
+const String _communityLifebuoyUrl = 'https://www.aieco.hk/community/lifebuoy';
 const String _communityWallUrl = 'https://www.aieco.hk/community/wall';
 const String _communityShareUrl = 'https://www.aieco.hk/community/share';
 const String _communityNewsHost = 'www.aieco.hk';
@@ -85,9 +84,9 @@ Future<void> _openExternalUrl(BuildContext context, String url) async {
   if (!context.mounted) {
     return;
   }
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('未能打開連結，已複製：$url')),
-  );
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text('未能打開連結，已複製：$url')));
 }
 
 enum MeshNetworkMode { online, offline }
@@ -102,11 +101,13 @@ class PropagationLightApp extends StatelessWidget {
     this.autoStart = true,
     this.enableWebView = true,
     this.showLaunchScreen = false,
+    this.onTermsDeclined,
   });
 
   final bool autoStart;
   final bool enableWebView;
   final bool showLaunchScreen;
+  final Future<void> Function()? onTermsDeclined;
 
   @override
   Widget build(BuildContext context) {
@@ -152,11 +153,13 @@ class PropagationLightApp extends StatelessWidget {
               child: PropagationLightHome(
                 autoStart: autoStart,
                 enableWebView: enableWebView,
+                onTermsDeclined: onTermsDeclined,
               ),
             )
           : PropagationLightHome(
               autoStart: autoStart,
               enableWebView: enableWebView,
+              onTermsDeclined: onTermsDeclined,
             ),
     );
   }
@@ -216,10 +219,12 @@ class PropagationLightHome extends StatefulWidget {
     super.key,
     required this.autoStart,
     required this.enableWebView,
+    this.onTermsDeclined,
   });
 
   final bool autoStart;
   final bool enableWebView;
+  final Future<void> Function()? onTermsDeclined;
 
   @override
   State<PropagationLightHome> createState() => _PropagationLightHomeState();
@@ -365,9 +370,20 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       return true;
     }
 
-    _mesh.setStatus('須先同意最終用戶許可協議，才可使用光之通道。');
+    _mesh.setStatus('須先同意最終用戶許可協議，才可使用光之通道。APP 將會關閉。');
     _showMeshStatusSnack();
+    await _closeAppAfterTermsDeclined();
     return false;
+  }
+
+  Future<void> _closeAppAfterTermsDeclined() async {
+    final handler = widget.onTermsDeclined;
+    if (handler != null) {
+      await handler();
+      return;
+    }
+
+    await SystemNavigator.pop();
   }
 
   void _openChatSafetyCenter() {
@@ -379,6 +395,88 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
         mesh: _mesh,
         onAcceptTerms: () => unawaited(_ensureEulaAccepted()),
       ),
+    );
+  }
+
+  void _openAccountPrivacyCenter() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _AccountPrivacySheet(
+        mesh: _mesh,
+        onDeleteAccount: _confirmDeleteAccount,
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('刪除本機帳號與資料？'),
+          content: const Text(
+            '這會停止光之網絡，刪除本機光點身份、名稱、條款狀態、封鎖名單、隱藏訊息、舉報記錄、目前訊息、物資和定位快取，並建立新的匿名光點身份。刪除帳號功能 1 天內只可使用 1 次。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.delete_forever),
+              label: const Text('刪除'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    final deleted = await _mesh.deleteLocalAccountAndData();
+    if (!mounted) {
+      return;
+    }
+    if (!deleted) {
+      await _showDeleteAccountBlockedPopup();
+      return;
+    }
+
+    if (_sosLight.active) {
+      await _sosLight.stop();
+    }
+    _messageController.clear();
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_mesh.status),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Future<void> _showDeleteAccountBlockedPopup() {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('暫時不能刪除帳號'),
+          content: Text(_mesh.status),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('知道'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1058,7 +1156,10 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
         return Scaffold(
           appBar: AppBar(
             toolbarHeight: 86,
-            title: _AppHeaderTitle(displayName: _mesh.displayName),
+            title: _AppHeaderTitle(
+              displayName: _mesh.displayName,
+              onOpenAccountPrivacy: _openAccountPrivacyCenter,
+            ),
             actions: [
               IconButton(
                 tooltip: _mesh.isRunning
@@ -1154,129 +1255,141 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
 }
 
 class _AppHeaderTitle extends StatelessWidget {
-  const _AppHeaderTitle({required this.displayName});
+  const _AppHeaderTitle({
+    required this.displayName,
+    required this.onOpenAccountPrivacy,
+  });
 
   final String displayName;
+  final VoidCallback onOpenAccountPrivacy;
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: '光之身份證 · 光點名稱 $displayName',
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerLeft,
-        child: Container(
-          width: 190,
-          height: 62,
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FBF7),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFC9D9CF)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x1A0D7C66),
-                blurRadius: 8,
-                offset: Offset(0, 2),
+      message: '帳號與私隱 · 光之身份證 · 光點名稱 $displayName',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const ValueKey('account-privacy-entry'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: onOpenAccountPrivacy,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Container(
+              width: 190,
+              height: 62,
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FBF7),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFC9D9CF)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x1A0D7C66),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: double.infinity,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE0F2E9),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFBFD9CE)),
-                ),
-                child: const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.person_pin_circle_outlined,
-                      size: 24,
-                      color: Color(0xFF0D7C66),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: double.infinity,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2E9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFBFD9CE)),
                     ),
-                    SizedBox(height: 1),
-                    Text(
-                      'ID',
-                      style: TextStyle(
-                        color: Color(0xFF0D7C66),
-                        fontSize: 8,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Row(
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Expanded(
-                          child: Text(
-                            '傳播光',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Color(0xFF17211E),
-                              fontSize: 12,
-                              height: 1,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0,
-                            ),
+                        Icon(
+                          Icons.person_pin_circle_outlined,
+                          size: 24,
+                          color: Color(0xFF0D7C66),
+                        ),
+                        SizedBox(height: 1),
+                        Text(
+                          'ID',
+                          style: TextStyle(
+                            color: Color(0xFF0D7C66),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0,
                           ),
                         ),
-                        SizedBox(width: 5),
                       ],
                     ),
-                    const Text(
-                      '光之身份證',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Color(0xFF566B60),
-                        fontSize: 8.5,
-                        height: 1,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0,
-                      ),
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '傳播光',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Color(0xFF17211E),
+                                  fontSize: 12,
+                                  height: 1,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 5),
+                          ],
+                        ),
+                        const Text(
+                          '光之身份證',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Color(0xFF566B60),
+                            fontSize: 8.5,
+                            height: 1,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          '帳號與私隱',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Color(0xFF6D7D75),
+                            fontSize: 8,
+                            height: 1,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        Text(
+                          displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF0D4F43),
+                            fontSize: 17,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      '光點名稱',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Color(0xFF6D7D75),
-                        fontSize: 8,
-                        height: 1,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                    Text(
-                      displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF0D4F43),
-                        fontSize: 17,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1612,51 +1725,42 @@ class _CommunityLinkGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxWidth = constraints.hasBoundedWidth
-            ? constraints.maxWidth
-            : _communityInfoMaxWidth;
-        final isWide = maxWidth >= 620;
-        final tileWidth = isWide ? (maxWidth - 16) / 3 : maxWidth;
-
-        return Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            SizedBox(
-              width: tileWidth,
-              child: const _CommunityLinkTile(
-                icon: Icons.volunteer_activism_outlined,
-                color: Color(0xFFB71C1C),
-                title: '社區救生圈',
-                body: '互助求援和支援資訊',
-                url: _communityLifebuoyUrl,
-              ),
+    return const SizedBox(
+      height: 96,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _CommunityLinkTile(
+              icon: Icons.volunteer_activism_outlined,
+              color: Color(0xFFB71C1C),
+              title: '社區救生圈',
+              body: '互助求援',
+              url: _communityLifebuoyUrl,
             ),
-            SizedBox(
-              width: tileWidth,
-              child: const _CommunityLinkTile(
-                icon: Icons.forum_outlined,
-                color: Color(0xFF00695C),
-                title: '社區共鳴牆',
-                body: '街坊留言與社區回應',
-                url: _communityWallUrl,
-              ),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: _CommunityLinkTile(
+              icon: Icons.forum_outlined,
+              color: Color(0xFF00695C),
+              title: '社區共鳴牆',
+              body: '街坊留言',
+              url: _communityWallUrl,
             ),
-            SizedBox(
-              width: tileWidth,
-              child: const _CommunityLinkTile(
-                icon: Icons.map_outlined,
-                color: Color(0xFF1565C0),
-                title: '守望地圖',
-                body: '查看和分享附近狀況',
-                url: _communityShareUrl,
-              ),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: _CommunityLinkTile(
+              icon: Icons.map_outlined,
+              color: Color(0xFF1565C0),
+              title: '守望地圖',
+              body: '分享狀況',
+              url: _communityShareUrl,
             ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1688,48 +1792,42 @@ class _CommunityLinkTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: () => unawaited(_openExternalUrl(context, url)),
         child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 38,
-                height: 38,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, color: color, size: 21),
+                child: Icon(icon, color: color, size: 20),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: _communityInfoInk,
-                        fontWeight: FontWeight.w900,
-                        height: 1.15,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      body,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: _communityInfoMuted,
-                        height: 1.2,
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 7),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: _communityInfoInk,
+                  fontWeight: FontWeight.w900,
+                  height: 1.12,
                 ),
               ),
-              const SizedBox(width: 8),
-              Icon(Icons.open_in_new, color: color, size: 18),
+              const SizedBox(height: 2),
+              Text(
+                body,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: _communityInfoMuted,
+                  height: 1.15,
+                ),
+              ),
             ],
           ),
         ),
@@ -1995,11 +2093,10 @@ class _CommunityNewsTile extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         item.dateLabel,
-                        style: Theme.of(context).textTheme.labelSmall
-                            ?.copyWith(
-                              color: const Color(0xFF7A8A82),
-                              fontWeight: FontWeight.w700,
-                            ),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFF7A8A82),
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ],
@@ -2189,12 +2286,13 @@ class _CommunityNewsRepository {
     });
     final decoded = await _getJson(uri);
     final rows = _extractList(decoded);
-    final items = rows
-        .whereType<Map<dynamic, dynamic>>()
-        .map(_CommunityNewsItem.fromMap)
-        .where((item) => item.slug.isNotEmpty && item.title.isNotEmpty)
-        .toList()
-      ..sort(_sortCommunityNews);
+    final items =
+        rows
+            .whereType<Map<dynamic, dynamic>>()
+            .map(_CommunityNewsItem.fromMap)
+            .where((item) => item.slug.isNotEmpty && item.title.isNotEmpty)
+            .toList()
+          ..sort(_sortCommunityNews);
     return items.take(_communityNewsLimit).toList();
   }
 
@@ -2215,16 +2313,17 @@ class _CommunityNewsRepository {
   Future<Object?> _getJson(Uri uri) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
-      final request = await client.getUrl(uri).timeout(
-        const Duration(seconds: 12),
-      );
+      final request = await client
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 12));
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       final response = await request.close().timeout(
         const Duration(seconds: 18),
       );
-      final body = await response.transform(utf8.decoder).join().timeout(
-        const Duration(seconds: 18),
-      );
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 18));
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw _CommunityNewsException(
           '最新消息暫時未能讀取（HTTP ${response.statusCode}）。',
@@ -2305,16 +2404,15 @@ class _CommunityNewsArticle {
     final title =
         _readCommunityString(map, const ['title', 'name', 'headline']) ??
         fallback.title;
-    final summary =
-        _stripHtml(
-          _readCommunityString(map, const [
-                'excerpt',
-                'summary',
-                'description',
-                'intro',
-              ]) ??
-              fallback.summary,
-        );
+    final summary = _stripHtml(
+      _readCommunityString(map, const [
+            'excerpt',
+            'summary',
+            'description',
+            'intro',
+          ]) ??
+          fallback.summary,
+    );
     final html =
         _readCommunityString(map, const [
           'contentHtml',
@@ -2483,7 +2581,10 @@ String _communityNewsErrorMessage(Object? error) {
 
 String _stripHtml(String value) {
   final text = value
-      .replaceAll(RegExp(r'<script[\s\S]*?</script>', caseSensitive: false), ' ')
+      .replaceAll(
+        RegExp(r'<script[\s\S]*?</script>', caseSensitive: false),
+        ' ',
+      )
       .replaceAll(RegExp(r'<style[\s\S]*?</style>', caseSensitive: false), ' ')
       .replaceAll(RegExp(r'<[^>]+>'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
@@ -2886,7 +2987,7 @@ class _EulaAgreementDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('不同意'),
+          child: const Text('不同意並關閉'),
         ),
         FilledButton.icon(
           onPressed: () => Navigator.of(context).pop(true),
@@ -2894,6 +2995,115 @@ class _EulaAgreementDialog extends StatelessWidget {
           label: const Text('我同意'),
         ),
       ],
+    );
+  }
+}
+
+class _AccountPrivacySheet extends StatelessWidget {
+  const _AccountPrivacySheet({
+    required this.mesh,
+    required this.onDeleteAccount,
+  });
+
+  final MeshChatService mesh;
+  final Future<void> Function() onDeleteAccount;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: mesh,
+      builder: (context, _) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+            ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE0F2E9),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFBFD9CE)),
+                      ),
+                      child: const Icon(
+                        Icons.manage_accounts_outlined,
+                        color: Color(0xFF0D7C66),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '帳號與私隱',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '目前光點：${mesh.displayName}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: const Color(0xFF566B60)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _SafetyStatusCard(
+                  icon: Icons.badge_outlined,
+                  title: '本機匿名帳號',
+                  body:
+                      '傳播光不使用帳密登入。App 會在本機建立匿名光點身份和名稱，用於聊天、光團、物資、信用、SOS 和雷達同步。',
+                ),
+                _SafetyStatusCard(
+                  icon: Icons.storage_outlined,
+                  title: '本機儲存資料',
+                  body:
+                      '本機會儲存光點身份、名稱、條款同意時間、封鎖名單、隱藏訊息和舉報記錄；目前工作階段中的訊息、物資、信用和定位快取也會在刪除時一併清除。',
+                ),
+                _SafetyStatusCard(
+                  icon: Icons.delete_forever_outlined,
+                  title: '刪除帳號與資料',
+                  body:
+                      '刪除會停止光之網絡，清除本機帳號資料，並建立新的匿名光點。此功能 1 天內只可使用 1 次。已透過 mesh 或線上 relay 傳送到其他裝置的副本無法從對方裝置自動刪除；可透過舉報或電郵要求開發者跟進公開副本。',
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.icon(
+                      key: const ValueKey('delete-account-button'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFB3261E),
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => unawaited(onDeleteAccount()),
+                      icon: const Icon(Icons.delete_forever),
+                      label: const Text('刪除本機帳號與資料'),
+                    ),
+                  ),
+                ),
+                _SafetyStatusCard(
+                  icon: Icons.mail_outline,
+                  title: '私隱與刪除協助',
+                  body: '如需處理已傳播或公開的副本，請聯絡：',
+                  child: const SelectableText(
+                    _moderationContactEmail,
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -3115,6 +3325,9 @@ class _SafetyPolicyText extends StatelessWidget {
         ),
         const _SafetyPolicyBullet(
           text: '不得濫用聊天、光團、物資、定位或 SOS 功能騷擾、欺騙、恐嚇或傷害其他用戶。',
+        ),
+        const _SafetyPolicyBullet(
+          text: '即使以匿名光點身份發布內容，也必須遵守本條款；違規匿名內容和發布者可被舉報、封鎖和移除。',
         ),
         const _SafetyPolicyBullet(
           text:
@@ -7188,8 +7401,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
           passphraseLabel: '實際密碼',
           ssid: hotspot.ssid,
           passphrase: hotspot.preSharedKey,
-          detail:
-              '系統會分配實際 WiFi 名稱和密碼，不能固定為 aiecohk。其他手機請連接上方資料，再打開傳播光聊天。',
+          detail: '系統會分配實際 WiFi 名稱和密碼，不能固定為 aiecohk。其他手機請連接上方資料，再打開傳播光聊天。',
         ),
       ],
       const SizedBox(height: 12),
@@ -9318,10 +9530,7 @@ class WifiMeshController extends ChangeNotifier {
   }
 
   Future<void> openBluetoothSettings() async {
-    await _callStatus(
-      'openBluetoothSettings',
-      successMessage: '已打開藍芽設定。',
-    );
+    await _callStatus('openBluetoothSettings', successMessage: '已打開藍芽設定。');
   }
 
   Future<void> openBluetoothTetherSettings() async {
@@ -10018,7 +10227,19 @@ class MeshChatService extends ChangeNotifier {
   static const String _blockedUserNamesPrefsKey = 'mesh.blockedUserNames';
   static const String _hiddenMessagesPrefsKey = 'mesh.hiddenMessages';
   static const String _moderationReportsPrefsKey = 'mesh.moderationReports';
+  static const String _accountDeletionLastAtPrefsKey =
+      'mesh.accountDeletionLastAt';
+  static const List<String> _accountDataPrefsKeys = <String>[
+    _nodeIdPrefsKey,
+    _displayNamePrefsKey,
+    _eulaAcceptedPrefsKey,
+    _blockedUsersPrefsKey,
+    _blockedUserNamesPrefsKey,
+    _hiddenMessagesPrefsKey,
+    _moderationReportsPrefsKey,
+  ];
   static const int _maxStoredModerationReports = 80;
+  static const Duration _accountDeletionCooldown = Duration(days: 1);
   static const Duration _announcementInterval = Duration(seconds: 4);
   static const Duration _cleanupInterval = Duration(seconds: 3);
   static const Duration _onlineReconnectDelay = Duration(seconds: 5);
@@ -10409,6 +10630,80 @@ class MeshChatService extends ChangeNotifier {
     } on Object {
       // Tests and unsupported platforms may not have the preferences plugin.
     }
+  }
+
+  Future<bool> deleteLocalAccountAndData() async {
+    final now = DateTime.now();
+    SharedPreferences? prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      final lastDeletedAt = DateTime.tryParse(
+        prefs.getString(_accountDeletionLastAtPrefsKey) ?? '',
+      );
+      final cooldownRemaining = _accountDeletionCooldownRemaining(
+        now,
+        lastDeletedAt,
+      );
+      if (cooldownRemaining != null) {
+        _status =
+            '刪除帳號 1 天內只可使用 1 次，請於 ${_formatAccountDeletionCooldown(cooldownRemaining)} 後再試。';
+        notifyListeners();
+        return false;
+      }
+    } on Object {
+      // Tests and unsupported platforms may not have the preferences plugin.
+    }
+
+    await stop();
+
+    _nodeId = _newId('node');
+    _displayName = _newDisplayName();
+    _myLocation = null;
+    _sosActive = false;
+    _activeRoomId = _defaultRoomId;
+    _eulaAcceptedAt = null;
+    _localAddresses = <String>[];
+
+    _clearPeerPresence();
+    _rooms.clear();
+    _rooms[_defaultRoomId] = MeshRoom(
+      id: _defaultRoomId,
+      name: _defaultRoomName,
+      createdBy: _nodeId,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+    );
+    _supplies.clear();
+    _creditVotes.clear();
+    _messages.clear();
+    _seenMessageIds
+      ..clear()
+      ..add(_nodeId);
+    _seenRoomIds
+      ..clear()
+      ..add(_defaultRoomId);
+    _blockedUserIds.clear();
+    _blockedUserNames.clear();
+    _hiddenMessageIds.clear();
+    _moderationReports.clear();
+
+    try {
+      prefs ??= await SharedPreferences.getInstance();
+      for (final key in _accountDataPrefsKeys) {
+        await prefs.remove(key);
+      }
+      await prefs.setString(_nodeIdPrefsKey, _nodeId);
+      await prefs.setString(_displayNamePrefsKey, _displayName);
+      await prefs.setString(
+        _accountDeletionLastAtPrefsKey,
+        now.toUtc().toIso8601String(),
+      );
+    } on Object {
+      // Tests and unsupported platforms may not have the preferences plugin.
+    }
+
+    _status = '本機帳號與資料已刪除。已建立新的光點身份，使用光之通道前需重新同意條款。';
+    notifyListeners();
+    return true;
   }
 
   Future<void> start() async {
@@ -12321,6 +12616,37 @@ class MeshChatService extends ChangeNotifier {
       return const <String, String>{};
     }
     return const <String, String>{};
+  }
+
+  static Duration? _accountDeletionCooldownRemaining(
+    DateTime now,
+    DateTime? lastDeletedAt,
+  ) {
+    if (lastDeletedAt == null) {
+      return null;
+    }
+
+    final elapsed = now.difference(lastDeletedAt);
+    if (!elapsed.isNegative && elapsed >= _accountDeletionCooldown) {
+      return null;
+    }
+    if (elapsed.isNegative) {
+      return _accountDeletionCooldown;
+    }
+    return _accountDeletionCooldown - elapsed;
+  }
+
+  static String _formatAccountDeletionCooldown(Duration remaining) {
+    final totalMinutes = max(1, remaining.inMinutes);
+    final hours = totalMinutes ~/ 60;
+    final minutes = totalMinutes.remainder(60);
+    if (hours == 0) {
+      return '$totalMinutes 分鐘';
+    }
+    if (minutes == 0) {
+      return '$hours 小時';
+    }
+    return '$hours 小時 $minutes 分鐘';
   }
 
   Future<List<String>> _loadLocalAddresses() async {

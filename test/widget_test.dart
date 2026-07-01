@@ -126,6 +126,71 @@ void main() {
   });
 
   test(
+    'MeshChatService deletes local account data and creates a fresh identity',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'mesh.nodeId': 'node-existing',
+        'mesh.displayName': 'HK1234567',
+        'mesh.eulaAcceptedAt': DateTime.utc(2026).toIso8601String(),
+        'mesh.blockedUsers': <String>['peer-1'],
+        'mesh.blockedUserNames': '{"peer-1":"惡意光點"}',
+        'mesh.hiddenMessages': <String>['msg-old'],
+        'mesh.moderationReports': <String>['{}'],
+      });
+
+      final mesh = MeshChatService();
+      addTearDown(mesh.dispose);
+
+      await mesh.loadSavedDisplayName();
+      await mesh.loadModerationPreferences();
+      final oldNodeId = mesh.onlineUsers.single.id;
+      final oldDisplayName = mesh.displayName;
+
+      expect(oldNodeId, 'node-existing');
+      expect(oldDisplayName, 'HK1234567');
+      expect(mesh.eulaAccepted, isTrue);
+      expect(mesh.blockedUsers, hasLength(1));
+
+      final sent = await mesh.sendMessage('刪除前本機訊息');
+      expect(sent, isTrue);
+      expect(mesh.messages, hasLength(1));
+
+      final deleted = await mesh.deleteLocalAccountAndData();
+
+      expect(deleted, isTrue);
+      expect(mesh.isRunning, isFalse);
+      expect(mesh.onlineUsers.single.id, isNot(oldNodeId));
+      expect(mesh.displayName, isNot(oldDisplayName));
+      expect(mesh.displayName, matches(RegExp(r'^HK\d{7}$')));
+      expect(mesh.eulaAccepted, isFalse);
+      expect(mesh.blockedUsers, isEmpty);
+      expect(mesh.messages, isEmpty);
+      expect(mesh.supplies, isEmpty);
+      expect(mesh.moderationReportCount, 0);
+      expect(mesh.status, contains('本機帳號與資料已刪除'));
+
+      final prefs = await SharedPreferences.getInstance();
+      final newNodeId = mesh.onlineUsers.single.id;
+      final newDisplayName = mesh.displayName;
+      expect(prefs.getString('mesh.nodeId'), newNodeId);
+      expect(prefs.getString('mesh.displayName'), newDisplayName);
+      expect(prefs.getString('mesh.eulaAcceptedAt'), isNull);
+      expect(prefs.getStringList('mesh.blockedUsers'), isNull);
+      expect(prefs.getString('mesh.blockedUserNames'), isNull);
+      expect(prefs.getStringList('mesh.hiddenMessages'), isNull);
+      expect(prefs.getStringList('mesh.moderationReports'), isNull);
+      expect(prefs.getString('mesh.accountDeletionLastAt'), isNotNull);
+
+      final deletedAgain = await mesh.deleteLocalAccountAndData();
+
+      expect(deletedAgain, isFalse);
+      expect(mesh.onlineUsers.single.id, newNodeId);
+      expect(mesh.displayName, newDisplayName);
+      expect(mesh.status, contains('1 天內只可使用 1 次'));
+    },
+  );
+
+  test(
     'MeshChatService shares supplies and deduplicates credit likes',
     () async {
       final mesh = MeshChatService();
@@ -208,6 +273,63 @@ void main() {
     await mesh.stop();
   });
 
+  testWidgets('Propagation Light closes when EULA is declined', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    var closed = false;
+
+    await tester.pumpWidget(
+      PropagationLightApp(
+        enableWebView: false,
+        onTermsDeclined: () async {
+          closed = true;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('最終用戶許可協議'), findsOneWidget);
+    expect(find.text('不同意並關閉'), findsOneWidget);
+
+    await tester.tap(find.text('不同意並關閉'));
+    await tester.pumpAndSettle();
+
+    expect(closed, isTrue);
+    expect(find.textContaining('APP 將會關閉'), findsWidgets);
+  });
+
+  testWidgets('Account deletion cooldown is shown in a popup', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+
+    await tester.pumpWidget(
+      const PropagationLightApp(autoStart: false, enableWebView: false),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('account-privacy-entry')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('delete-account-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('刪除本機帳號與資料？'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, '刪除'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('本機帳號與資料已刪除'), findsWidgets);
+
+    await tester.tap(find.byKey(const ValueKey('delete-account-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '刪除'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('暫時不能刪除帳號'), findsOneWidget);
+    expect(find.textContaining('1 天內只可使用 1 次'), findsWidgets);
+    expect(find.textContaining('後再試'), findsWidgets);
+  });
+
   test('MeshChatService marks local SOS in users and radar contacts', () async {
     final mesh = MeshChatService();
     addTearDown(mesh.dispose);
@@ -272,6 +394,7 @@ void main() {
     expect(find.text('光之通道'), findsOneWidget);
     expect(find.text('光之雷達'), findsWidgets);
     expect(find.byTooltip('功能介紹'), findsOneWidget);
+    expect(find.byKey(const ValueKey('account-privacy-entry')), findsOneWidget);
     expect(find.byTooltip('社區網絡'), findsNothing);
     expect(find.text('SOS 燈'), findsOneWidget);
     expect(find.textContaining('MESH 自動連接'), findsOneWidget);
@@ -279,6 +402,18 @@ void main() {
     expect(find.textContaining('發出 P2P 連接邀請'), findsOneWidget);
     expect(find.textContaining('請先開啟 WiFi'), findsOneWidget);
     expect(find.textContaining('重新開啟光之網絡'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('account-privacy-entry')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('帳號與私隱'), findsWidgets);
+    expect(find.text('本機匿名帳號'), findsOneWidget);
+    expect(find.text('刪除帳號與資料'), findsOneWidget);
+    expect(find.textContaining('1 天內只可使用 1 次'), findsOneWidget);
+    expect(find.byKey(const ValueKey('delete-account-button')), findsOneWidget);
+
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('啟動離線節點'));
     await tester.runAsync(() async {
