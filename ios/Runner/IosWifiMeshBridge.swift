@@ -1,5 +1,6 @@
 import Flutter
 import AVFoundation
+import CoreLocation
 import Darwin
 import Network
 import UIKit
@@ -19,8 +20,20 @@ final class IosWifiMeshBridge: NSObject {
   private var pathMonitor: NWPathMonitor?
   private let pathQueue = DispatchQueue(label: "hk.aieco.propagation_light.wifi_path")
   private let serviceId = UUID().uuidString
+  private let locationManager = CLLocationManager()
+  private var pendingLocationResult: FlutterResult?
+  private var locationTimeoutWorkItem: DispatchWorkItem?
+  private var lastLocation: CLLocation?
+  private var locationRequestInFlight = false
+  private var waitingForLocationAuthorization = false
   private var wifiAvailable = false
   private var networkGeneration = 0
+
+  override init() {
+    super.init()
+    locationManager.delegate = self
+    locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+  }
 
   func register(with messenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(
@@ -67,7 +80,7 @@ final class IosWifiMeshBridge: NSObject {
     case "setTorch":
       setTorch(from: call.arguments, result: result)
     case "currentLocation":
-      result(FlutterMethodNotImplemented)
+      currentLocation(result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -180,6 +193,206 @@ final class IosWifiMeshBridge: NSObject {
 
   private func hasTorch() -> Bool {
     return AVCaptureDevice.default(for: .video)?.hasTorch == true
+  }
+
+  private func currentLocation(result: @escaping FlutterResult) {
+    if pendingLocationResult != nil {
+      result(FlutterError(
+        code: "location_pending",
+        message: "正在讀取手機定位。",
+        details: nil
+      ))
+      return
+    }
+
+    switch locationAuthorizationStatus() {
+    case .notDetermined:
+      pendingLocationResult = result
+      waitingForLocationAuthorization = true
+      locationManager.requestWhenInUseAuthorization()
+    case .authorizedAlways, .authorizedWhenInUse:
+      pendingLocationResult = result
+      requestCurrentLocationForPendingResult()
+    case .denied, .restricted:
+      result(FlutterError(
+        code: "permission_missing",
+        message: "請到 iOS 設定允許位置權限後再按定位。",
+        details: locationPermissionSnapshot()
+      ))
+    @unknown default:
+      result(FlutterError(
+        code: "permission_missing",
+        message: "暫時未能確認位置權限。",
+        details: locationPermissionSnapshot()
+      ))
+    }
+  }
+
+  private func requestCurrentLocationForPendingResult() {
+    guard pendingLocationResult != nil, !locationRequestInFlight else {
+      return
+    }
+
+    if let cached = recentCachedLocation(maxAge: 120) {
+      finishLocationRequest(
+        with: cached,
+        fromCache: true,
+        message: "已使用最近定位"
+      )
+      return
+    }
+
+    guard CLLocationManager.locationServicesEnabled() else {
+      if let cached = bestCachedLocation() {
+        finishLocationRequest(
+          with: cached,
+          fromCache: true,
+          message: "定位服務未開啟，已使用暫存位置"
+        )
+      } else {
+        finishLocationRequest(
+          code: "location_disabled",
+          message: "請先開啟 iOS 定位服務。",
+          details: nil
+        )
+      }
+      return
+    }
+
+    locationRequestInFlight = true
+    let timeout = DispatchWorkItem { [weak self] in
+      self?.finishLocationTimeout()
+    }
+    locationTimeoutWorkItem = timeout
+    DispatchQueue.main.asyncAfter(deadline: .now() + 8.0, execute: timeout)
+    locationManager.requestLocation()
+  }
+
+  private func finishLocationTimeout() {
+    if let cached = bestCachedLocation() {
+      finishLocationRequest(
+        with: cached,
+        fromCache: true,
+        message: "定位逾時，已使用最近位置"
+      )
+    } else {
+      finishLocationRequest(
+        code: "location_timeout",
+        message: "定位逾時，請到室外或開啟更準確定位。",
+        details: nil
+      )
+    }
+  }
+
+  private func finishLocationRequest(
+    with location: CLLocation,
+    fromCache: Bool,
+    message: String
+  ) {
+    guard let result = pendingLocationResult else {
+      return
+    }
+
+    lastLocation = location
+    clearLocationRequest()
+    result(location.toLocationMap(fromCache: fromCache, message: message))
+  }
+
+  private func finishLocationRequest(
+    code: String,
+    message: String,
+    details: Any?
+  ) {
+    guard let result = pendingLocationResult else {
+      return
+    }
+
+    clearLocationRequest()
+    result(FlutterError(code: code, message: message, details: details))
+  }
+
+  private func clearLocationRequest() {
+    locationTimeoutWorkItem?.cancel()
+    locationTimeoutWorkItem = nil
+    locationRequestInFlight = false
+    waitingForLocationAuthorization = false
+    pendingLocationResult = nil
+    locationManager.stopUpdatingLocation()
+  }
+
+  private func handleLocationAuthorizationChanged(_ status: CLAuthorizationStatus) {
+    guard pendingLocationResult != nil, waitingForLocationAuthorization else {
+      return
+    }
+
+    switch status {
+    case .authorizedAlways, .authorizedWhenInUse:
+      waitingForLocationAuthorization = false
+      requestCurrentLocationForPendingResult()
+    case .denied, .restricted:
+      finishLocationRequest(
+        code: "permission_missing",
+        message: "請到 iOS 設定允許位置權限後再按定位。",
+        details: locationPermissionSnapshot()
+      )
+    case .notDetermined:
+      break
+    @unknown default:
+      finishLocationRequest(
+        code: "permission_missing",
+        message: "暫時未能確認位置權限。",
+        details: locationPermissionSnapshot()
+      )
+    }
+  }
+
+  private func locationAuthorizationStatus() -> CLAuthorizationStatus {
+    if #available(iOS 14.0, *) {
+      return locationManager.authorizationStatus
+    }
+    return CLLocationManager.authorizationStatus()
+  }
+
+  private func hasLocationPermission() -> Bool {
+    switch locationAuthorizationStatus() {
+    case .authorizedAlways, .authorizedWhenInUse:
+      return true
+    case .notDetermined, .denied, .restricted:
+      return false
+    @unknown default:
+      return false
+    }
+  }
+
+  private func locationPermissionSnapshot() -> [String: Any] {
+    let required = ["NSLocationWhenInUseUsageDescription"]
+    return [
+      "required": required,
+      "missing": hasLocationPermission() ? [] : required
+    ]
+  }
+
+  private func recentCachedLocation(maxAge: TimeInterval) -> CLLocation? {
+    guard let location = bestCachedLocation() else {
+      return nil
+    }
+
+    let age = abs(location.timestamp.timeIntervalSinceNow)
+    return age < maxAge ? location : nil
+  }
+
+  private func bestCachedLocation() -> CLLocation? {
+    let candidates = [lastLocation, locationManager.location]
+      .compactMap { $0 }
+      .filter { isUsable(location: $0) }
+    return candidates.max { left, right in
+      left.timestamp < right.timestamp
+    }
+  }
+
+  private func isUsable(location: CLLocation) -> Bool {
+    return CLLocationCoordinate2DIsValid(location.coordinate) &&
+      location.horizontalAccuracy >= 0
   }
 
   private func status(message: String? = nil) -> [String: Any] {
@@ -476,5 +689,84 @@ extension IosWifiMeshBridge: NetServiceDelegate {
 
   func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
     servicesByName.removeValue(forKey: sender.name)
+  }
+}
+
+extension IosWifiMeshBridge: CLLocationManagerDelegate {
+  @available(iOS 14.0, *)
+  func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    handleLocationAuthorizationChanged(manager.authorizationStatus)
+  }
+
+  func locationManager(
+    _ manager: CLLocationManager,
+    didChangeAuthorization status: CLAuthorizationStatus
+  ) {
+    handleLocationAuthorizationChanged(status)
+  }
+
+  func locationManager(
+    _ manager: CLLocationManager,
+    didUpdateLocations locations: [CLLocation]
+  ) {
+    guard let location = locations
+      .filter({ isUsable(location: $0) })
+      .max(by: { left, right in left.timestamp < right.timestamp }) else {
+      return
+    }
+
+    lastLocation = location
+    let insideHongKong = location.coordinate.latitude >= 22.13 &&
+      location.coordinate.latitude <= 22.57 &&
+      location.coordinate.longitude >= 113.82 &&
+      location.coordinate.longitude <= 114.43
+    let message = insideHongKong ? "定位成功" : "定位成功，位置在香港地圖範圍外"
+    finishLocationRequest(
+      with: location,
+      fromCache: false,
+      message: message
+    )
+  }
+
+  func locationManager(
+    _ manager: CLLocationManager,
+    didFailWithError error: Error
+  ) {
+    if let error = error as? CLError, error.code == .denied {
+      finishLocationRequest(
+        code: "permission_missing",
+        message: "請到 iOS 設定允許位置權限後再按定位。",
+        details: locationPermissionSnapshot()
+      )
+      return
+    }
+
+    if let cached = bestCachedLocation() {
+      finishLocationRequest(
+        with: cached,
+        fromCache: true,
+        message: "未能刷新定位，已使用暫存位置"
+      )
+    } else {
+      finishLocationRequest(
+        code: "location_unavailable",
+        message: "未能讀取手機定位。",
+        details: nil
+      )
+    }
+  }
+}
+
+private extension CLLocation {
+  func toLocationMap(fromCache: Bool, message: String) -> [String: Any] {
+    return [
+      "latitude": coordinate.latitude,
+      "longitude": coordinate.longitude,
+      "accuracyMeters": max(0.0, horizontalAccuracy),
+      "provider": "corelocation",
+      "timestampMillis": Int(timestamp.timeIntervalSince1970 * 1000),
+      "fromCache": fromCache,
+      "message": message
+    ]
   }
 }

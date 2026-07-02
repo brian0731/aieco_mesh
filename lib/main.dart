@@ -280,12 +280,17 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
         return;
       }
       await _syncLocalNetworkPreference();
-      _scheduleStartupPermissionsRequest();
+      if (Platform.isIOS) {
+        _scheduleAutomaticRadarLocation();
+        _scheduleStartupPermissionsRequest(delay: const Duration(seconds: 3));
+      } else {
+        _scheduleStartupPermissionsRequest();
+        _scheduleAutomaticRadarLocation(delay: const Duration(seconds: 4));
+      }
       unawaited(_mesh.start());
       unawaited(_wifiMesh.refreshStatus());
       _startWirelessStatusTracking();
       _startWifiGroupTracking();
-      _scheduleAutomaticRadarLocation(delay: const Duration(seconds: 4));
     }
   }
 
@@ -794,7 +799,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     await _syncWifiDirectOwnerIfReady(force: true);
   }
 
-  void _scheduleStartupPermissionsRequest() {
+  void _scheduleStartupPermissionsRequest({Duration delay = Duration.zero}) {
     if (_startupPermissionsRequested) {
       return;
     }
@@ -802,6 +807,17 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     _startupPermissionsRequested = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !widget.autoStart) {
+        return;
+      }
+      if (delay > Duration.zero) {
+        unawaited(
+          Future<void>.delayed(delay).then((_) {
+            if (!mounted || !widget.autoStart) {
+              return;
+            }
+            unawaited(_requestStartupPermissions());
+          }),
+        );
         return;
       }
       unawaited(_requestStartupPermissions());
@@ -9675,7 +9691,7 @@ class LightRadarController extends ChangeNotifier {
     String displayName, {
     bool quiet = false,
   }) async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && !Platform.isIOS) {
       _message = '定位功能目前只在支援的原生端開放。';
       notifyListeners();
       return null;
