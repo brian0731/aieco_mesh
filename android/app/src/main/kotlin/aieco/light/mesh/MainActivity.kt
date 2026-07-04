@@ -113,6 +113,8 @@ private class WifiMeshBridge(private val activity: Activity) {
         private const val TORCH_PERMISSION_REQUEST_CODE = 4789
         private const val APP_SERVICE_INSTANCE = "AIECO Mesh"
         private const val APP_SERVICE_TYPE = "_aieco-mesh._tcp"
+        private const val TRANSPORT_BLUETOOTH = "bluetooth"
+        private const val TRANSPORT_WIFI = "wifi"
     }
 
     private val appContext = activity.applicationContext
@@ -154,6 +156,7 @@ private class WifiMeshBridge(private val activity: Activity) {
     private var lastP2pOperationAt = 0L
     private var preferLocalNetwork = true
     private var preferBluetoothNetwork = false
+    private var transportMode = TRANSPORT_WIFI
     private var pendingLocationResult: MethodChannel.Result? = null
     private var torchCameraId: String? = null
 
@@ -321,17 +324,16 @@ private class WifiMeshBridge(private val activity: Activity) {
         }
 
         val p2pGroupFormed = currentConnection?.get("groupFormed") == true
+        if (transportMode == TRANSPORT_BLUETOOTH) {
+            return bluetoothNetwork
+        }
         if (wifiDirectNetwork != null) {
             return wifiDirectNetwork
         }
         if (p2pGroupFormed) {
             return null
         }
-        return if (preferBluetoothNetwork) {
-            bluetoothNetwork ?: localNetwork
-        } else {
-            localNetwork ?: bluetoothNetwork
-        }
+        return localNetwork
     }
 
     private fun handleP2pStateChanged(intent: Intent) {
@@ -383,11 +385,18 @@ private class WifiMeshBridge(private val activity: Activity) {
     private fun refreshKnownNetworks() {
         var nextWifiDirectNetwork: Network? = null
         var nextLocalNetwork: Network? = null
+        var nextBluetoothNetwork: Network? = null
 
         for (network in connectivityManager.allNetworks) {
             val capabilities = runCatching {
                 connectivityManager.getNetworkCapabilities(network)
             }.getOrNull() ?: continue
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH)) {
+                if (nextBluetoothNetwork == null) {
+                    nextBluetoothNetwork = network
+                }
+                continue
+            }
             if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
                 continue
             }
@@ -402,12 +411,17 @@ private class WifiMeshBridge(private val activity: Activity) {
             }
         }
 
-        if (wifiDirectNetwork == nextWifiDirectNetwork && localNetwork == nextLocalNetwork) {
+        if (
+            wifiDirectNetwork == nextWifiDirectNetwork &&
+                localNetwork == nextLocalNetwork &&
+                bluetoothNetwork == nextBluetoothNetwork
+        ) {
             return
         }
 
         wifiDirectNetwork = nextWifiDirectNetwork
         localNetwork = nextLocalNetwork
+        bluetoothNetwork = nextBluetoothNetwork
         networkGeneration += 1
         bindProcessToPreferredNetwork()
     }
@@ -446,6 +460,10 @@ private class WifiMeshBridge(private val activity: Activity) {
             }
             "setPreferLocalNetwork" -> setPreferLocalNetwork(
                 call.argument<Boolean>("enabled") == true,
+                result
+            )
+            "setTransportMode" -> setTransportMode(
+                call.argument<String>("mode"),
                 result
             )
             "setTorch" -> setTorch(call.argument<Boolean>("enabled") == true, result)
@@ -522,6 +540,10 @@ private class WifiMeshBridge(private val activity: Activity) {
     }
 
     private fun openWifiDirectSettings(result: MethodChannel.Result) {
+        transportMode = TRANSPORT_WIFI
+        preferBluetoothNetwork = false
+        networkGeneration += 1
+        bindProcessToPreferredNetwork()
         val opened = openFirstAvailableSettingsAction(
             listOf(
                 "android.settings.WIFI_P2P_SETTINGS",
@@ -541,6 +563,7 @@ private class WifiMeshBridge(private val activity: Activity) {
     }
 
     private fun openBluetoothTetherSettings(result: MethodChannel.Result) {
+        transportMode = TRANSPORT_BLUETOOTH
         preferBluetoothNetwork = true
         networkGeneration += 1
         bindProcessToPreferredNetwork()
@@ -648,8 +671,8 @@ private class WifiMeshBridge(private val activity: Activity) {
 
         return mapOf(
             "capabilities" to capabilities(),
-            "peers" to allPeers,
-            "wifiNetworks" to currentWifiNetworks,
+            "peers" to if (transportMode == TRANSPORT_BLUETOOTH) emptyList<Map<String, Any?>>() else allPeers,
+            "wifiNetworks" to if (transportMode == TRANSPORT_BLUETOOTH) emptyList<Map<String, Any?>>() else currentWifiNetworks,
             "group" to currentGroup,
             "connection" to currentConnection,
             "hotspot" to hotspotInfo,
@@ -659,10 +682,30 @@ private class WifiMeshBridge(private val activity: Activity) {
             "bluetoothEnabled" to isBluetoothEnabled(),
             "preferLocalNetwork" to preferLocalNetwork,
             "preferBluetoothNetwork" to preferBluetoothNetwork,
+            "transportMode" to transportMode,
             "boundToWifi" to boundToWifi,
             "boundToBluetooth" to boundToBluetooth,
             "networkGeneration" to networkGeneration
         )
+    }
+
+    private fun setTransportMode(mode: String?, result: MethodChannel.Result) {
+        val nextMode = when (mode) {
+            TRANSPORT_BLUETOOTH -> TRANSPORT_BLUETOOTH
+            else -> TRANSPORT_WIFI
+        }
+        if (transportMode != nextMode) {
+            transportMode = nextMode
+            preferBluetoothNetwork = nextMode == TRANSPORT_BLUETOOTH
+            networkGeneration += 1
+        }
+        bindProcessToPreferredNetwork()
+        val message = if (transportMode == TRANSPORT_BLUETOOTH) {
+            "已切換藍芽模式；離線聊天只會使用藍芽網絡。"
+        } else {
+            "已切換 WiFi 模式；離線聊天只會使用 WiFi / Wi‑Fi Direct。"
+        }
+        result.success(status() + mapOf("message" to message))
     }
 
     private fun setPreferLocalNetwork(enabled: Boolean, result: MethodChannel.Result) {

@@ -10,6 +10,8 @@ final class IosWifiMeshBridge: NSObject {
   private static let serviceType = "_aieco-mesh._tcp."
   private static let serviceDomain = "local."
   private static let servicePort: Int32 = 47888
+  private static let transportBluetooth = "bluetooth"
+  private static let transportWifi = "wifi"
 
   private var channel: FlutterMethodChannel?
   private var browser: NetServiceBrowser?
@@ -27,6 +29,7 @@ final class IosWifiMeshBridge: NSObject {
   private var locationRequestInFlight = false
   private var waitingForLocationAuthorization = false
   private var wifiAvailable = false
+  private var transportMode = IosWifiMeshBridge.transportWifi
   private var networkGeneration = 0
 
   override init() {
@@ -61,6 +64,8 @@ final class IosWifiMeshBridge: NSObject {
       startLocalService()
       startBrowsing()
       result(status(message: connectPeerMessage(from: call.arguments)))
+    case "setTransportMode":
+      setTransportMode(from: call.arguments, result: result)
     case "scanWifi":
       result(status(message: "iOS 不允許 app 掃描附近 WiFi SSID；請先連到同一 WiFi，再掃 LAN peers。"))
     case "connectWifi":
@@ -92,7 +97,7 @@ final class IosWifiMeshBridge: NSObject {
       "wifiDirectSupported": false,
       "wifiPeerSupported": true,
       "localOnlyHotspotSupported": false,
-      "bluetoothSupported": false,
+      "bluetoothSupported": true,
       "torchSupported": hasTorch(),
       "canOpenWifiSettings": true,
       "canOpenBluetoothSettings": true,
@@ -396,6 +401,9 @@ final class IosWifiMeshBridge: NSObject {
   }
 
   private func status(message: String? = nil) -> [String: Any] {
+    let wifiMode = transportMode == Self.transportWifi
+    let bluetoothMode = transportMode == Self.transportBluetooth
+    let wifiReady = wifiAvailable || hasLocalWifiAddress()
     var payload: [String: Any] = [
       "capabilities": capabilities(),
       "peers": currentPeers(),
@@ -403,10 +411,11 @@ final class IosWifiMeshBridge: NSObject {
       "group": NSNull(),
       "connection": NSNull(),
       "hotspot": NSNull(),
-      "wifiEnabled": wifiAvailable || hasLocalWifiAddress(),
-      "bluetoothEnabled": false,
-      "boundToWifi": wifiAvailable || hasLocalWifiAddress(),
-      "boundToBluetooth": false,
+      "wifiEnabled": wifiMode && wifiReady,
+      "bluetoothEnabled": true,
+      "transportMode": transportMode,
+      "boundToWifi": wifiMode && wifiReady,
+      "boundToBluetooth": bluetoothMode,
       "networkGeneration": networkGeneration
     ]
     if let message = message {
@@ -442,7 +451,7 @@ final class IosWifiMeshBridge: NSObject {
     ])
     service.setTXTRecord(txt)
     service.delegate = self
-    service.includesPeerToPeer = true
+    service.includesPeerToPeer = transportMode == Self.transportBluetooth
     service.publish()
     localService = service
   }
@@ -454,7 +463,7 @@ final class IosWifiMeshBridge: NSObject {
 
     let nextBrowser = NetServiceBrowser()
     nextBrowser.delegate = self
-    nextBrowser.includesPeerToPeer = true
+    nextBrowser.includesPeerToPeer = transportMode == Self.transportBluetooth
     nextBrowser.searchForServices(
       ofType: Self.serviceType,
       inDomain: Self.serviceDomain
@@ -478,9 +487,17 @@ final class IosWifiMeshBridge: NSObject {
     let message: String
     let count = peersByKey.count
     if count == 0 {
-      message = "未找到同一 WiFi 內已開啟本 app 的 iOS LAN peer。請確認兩部手機已連到同一 WiFi 並允許本地網絡。"
+      if transportMode == Self.transportBluetooth {
+        message = "未找到藍芽 peer。請確認兩部 iPhone 已開啟藍芽並允許本地網絡。"
+      } else {
+        message = "未找到同一 WiFi 內已開啟本 app 的 iOS LAN peer。請確認兩部手機已連到同一 WiFi 並允許本地網絡。"
+      }
     } else {
-      message = "已找到 \(count) 個同一 WiFi 內的 app peer。"
+      if transportMode == Self.transportBluetooth {
+        message = "已找到 \(count) 個藍芽 peer。"
+      } else {
+        message = "已找到 \(count) 個同一 WiFi 內的 app peer。"
+      }
     }
     let payload = status(message: message)
     let results = pendingResolveResults
@@ -501,6 +518,42 @@ final class IosWifiMeshBridge: NSObject {
       return "已選取 iOS LAN peer：\(host):\(port)。傳播光會用 TCP mesh 同步。"
     }
     return "已選取 iOS LAN peer。傳播光會嘗試用 TCP mesh 同步。"
+  }
+
+  private func setTransportMode(from arguments: Any?, result: @escaping FlutterResult) {
+    let args = arguments as? [String: Any]
+    let requested = args?["mode"] as? String
+    let nextMode: String
+    if requested == Self.transportBluetooth {
+      nextMode = Self.transportBluetooth
+    } else {
+      nextMode = Self.transportWifi
+    }
+
+    if transportMode != nextMode {
+      transportMode = nextMode
+      restartDiscoveryForTransportMode()
+      networkGeneration += 1
+    }
+
+    startLocalService()
+    startBrowsing()
+    let message: String
+    if transportMode == Self.transportBluetooth {
+      message = "已切換藍芽模式；iOS 會使用 peer-to-peer 搜尋。"
+    } else {
+      message = "已切換 WiFi 模式；iOS 會使用本地 WiFi 網絡。"
+    }
+    result(status(message: message))
+  }
+
+  private func restartDiscoveryForTransportMode() {
+    browser?.stop()
+    browser = nil
+    localService?.stop()
+    localService = nil
+    servicesByName.removeAll()
+    peersByKey.removeAll()
   }
 
   private func openSettings() {
@@ -657,7 +710,7 @@ extension IosWifiMeshBridge: NetServiceBrowserDelegate {
     }
     servicesByName[service.name] = service
     service.delegate = self
-    service.includesPeerToPeer = true
+    service.includesPeerToPeer = transportMode == Self.transportBluetooth
     service.resolve(withTimeout: 2.0)
   }
 

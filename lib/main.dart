@@ -91,6 +91,8 @@ Future<void> _openExternalUrl(BuildContext context, String url) async {
 
 enum MeshNetworkMode { online, offline }
 
+enum WifiTransportMode { bluetooth, wifi }
+
 void main() {
   runApp(const PropagationLightApp(showLaunchScreen: true));
 }
@@ -247,6 +249,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   bool _localNetworkPreferenceBusy = false;
   bool _startupPermissionsRequested = false;
   bool? _lastPreferLocalNetwork;
+  WifiTransportMode? _lastSyncedTransportMode;
   String? _lastWirelessStatusSignature;
   String? _lastP2pOwnerSyncEndpoint;
   DateTime? _lastP2pOwnerSyncAt;
@@ -850,6 +853,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     _wifiGroupTimer = Timer.periodic(_wifiGroupInterval, (_) {
       if (!mounted) return;
       if (_mesh.networkMode != MeshNetworkMode.offline) return;
+      if (_wifiMesh.transportMode != WifiTransportMode.wifi) return;
       if (_wifiMesh.isIOS) return;
       if (_wifiMesh.connection?.groupFormed == true) return;
       if (_wifiMesh.hotspot != null) return;
@@ -886,11 +890,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       final nextSignature = _wirelessStatusSignature();
       _lastWirelessStatusSignature = nextSignature;
 
-      final wirelessReady =
-          _wifiMesh.boundToWifi ||
-          _wifiMesh.boundToBluetooth ||
-          _wifiMesh.connection?.groupFormed == true ||
-          _wifiMesh.hotspot != null;
+      final wirelessReady = _selectedTransportReady();
       final networkChanged =
           previousSignature != null && previousSignature != nextSignature;
 
@@ -909,26 +909,60 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   }
 
   Future<void> _syncLocalNetworkPreference() async {
-    if (_localNetworkPreferenceBusy || !_wifiMesh.isAndroid) {
+    if (_localNetworkPreferenceBusy ||
+        (!_wifiMesh.isAndroid && !_wifiMesh.isIOS)) {
       return;
     }
 
     final preferLocalNetwork = _mesh.networkMode == MeshNetworkMode.offline;
-    if (_lastPreferLocalNetwork == preferLocalNetwork) {
+    final nextTransportMode = _wifiMesh.transportMode;
+    final shouldSyncLocalPreference =
+        _wifiMesh.isAndroid && _lastPreferLocalNetwork != preferLocalNetwork;
+    final shouldSyncTransportMode =
+        _lastSyncedTransportMode != nextTransportMode;
+    if (!shouldSyncLocalPreference && !shouldSyncTransportMode) {
+      _mesh.setOfflineTransportMode(
+        _wifiMesh.transportMode,
+        ready: _selectedTransportReady(),
+      );
       return;
     }
 
     _localNetworkPreferenceBusy = true;
     try {
-      await _wifiMesh.setPreferLocalNetwork(preferLocalNetwork);
-      _lastPreferLocalNetwork = preferLocalNetwork;
+      if (shouldSyncTransportMode) {
+        await _wifiMesh.setTransportMode(nextTransportMode);
+        _lastSyncedTransportMode = nextTransportMode;
+      }
+      if (shouldSyncLocalPreference) {
+        await _wifiMesh.setPreferLocalNetwork(preferLocalNetwork);
+        _lastPreferLocalNetwork = preferLocalNetwork;
+      }
+      _mesh.setOfflineTransportMode(
+        _wifiMesh.transportMode,
+        ready: _selectedTransportReady(),
+      );
     } finally {
       _localNetworkPreferenceBusy = false;
     }
   }
 
+  bool _selectedTransportReady() {
+    if (_wifiMesh.transportMode == WifiTransportMode.bluetooth) {
+      return _wifiMesh.boundToBluetooth;
+    }
+    return _wifiMesh.boundToWifi ||
+        _wifiMesh.connection?.groupFormed == true ||
+        _wifiMesh.hotspot != null;
+  }
+
   Future<void> _syncWifiDirectOwnerIfReady({bool force = false}) async {
     if (_mesh.networkMode != MeshNetworkMode.offline) {
+      return;
+    }
+    if (_wifiMesh.transportMode != WifiTransportMode.wifi) {
+      _lastP2pOwnerSyncEndpoint = null;
+      _lastP2pOwnerSyncAt = null;
       return;
     }
 
@@ -970,6 +1004,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       _wifiMesh.bluetoothEnabled,
       _wifiMesh.boundToWifi,
       _wifiMesh.boundToBluetooth,
+      _wifiMesh.transportMode.name,
       _wifiMesh.networkGeneration,
       connection?.groupFormed ?? false,
       connection?.isGroupOwner ?? false,
@@ -7374,6 +7409,20 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
     await widget.onPeerReady(peer);
   }
 
+  Future<void> _setTransportMode(WifiTransportMode mode) async {
+    await widget.controller.setTransportMode(mode);
+    await widget.onNetworkReady();
+  }
+
+  Future<void> _refreshBluetoothMode() async {
+    if (widget.controller.isIOS) {
+      await widget.controller.discoverAppPeers();
+    } else {
+      await widget.controller.refreshStatus();
+    }
+    await widget.onNetworkReady();
+  }
+
   Future<void> _scanPeersAndConnectMesh() async {
     await widget.controller.discoverAppPeers();
     final meshPeer = widget.controller.firstAppP2pPeer;
@@ -7397,85 +7446,108 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
     final hotspot = controller.hotspot;
     final selectedWifi = _currentSelectedWifi();
     final meshPeer = controller.firstAppP2pPeer;
+    final isBluetoothMode =
+        controller.transportMode == WifiTransportMode.bluetooth;
     final wirelessContent = <Widget>[
       _WifiNotice(controller: controller),
-      if (group != null) ...[
+      if (isBluetoothMode) ...[
         const SizedBox(height: 12),
-        _CredentialBox(
-          title: 'Wi‑Fi Direct Group',
-          ssid: group.networkName,
-          passphrase: group.passphrase,
-          detail:
-              '${group.isGroupOwner ? '本機是 group owner' : '本機是 client'} · ${group.clients.length} client',
-        ),
-      ],
-      if (hotspot != null) ...[
-        const SizedBox(height: 12),
-        _CredentialBox(
-          title: 'AIECO 本地熱點',
-          ssidLabel: '實際 SSID',
-          passphraseLabel: '實際密碼',
-          ssid: hotspot.ssid,
-          passphrase: hotspot.preSharedKey,
-          detail: '系統會分配實際 WiFi 名稱和密碼，不能固定為 aiecohk。其他手機請連接上方資料，再打開傳播光聊天。',
-        ),
-      ],
-      const SizedBox(height: 12),
-      _MeshAutoConnectNotice(controller: controller, meshPeer: meshPeer),
-      const SizedBox(height: 8),
-      if (!controller.isIOS) ...[
         _BluetoothHotspotNotice(controller: controller),
-        const SizedBox(height: 8),
-      ],
-      Row(
-        children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: controller.busy
-                  ? null
-                  : () => unawaited(_scanPeersAndConnectMesh()),
-              icon: const Icon(Icons.radar),
-              label: Text(controller.isIOS ? '掃 LAN 並連接' : '掃 P2P 並連接'),
+        if (controller.p2pPeers.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            '藍芽 peers',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...controller.p2pPeers.map(
+            (peer) => _P2pPeerTile(
+              peer: peer,
+              onConnect: () => unawaited(_connectPeer(peer)),
             ),
           ),
         ],
-      ),
-      const SizedBox(height: 10),
-      if (controller.p2pPeers.isNotEmpty) ...[
-        Text(
-          controller.isIOS ? 'WiFi LAN peers' : 'Wi‑Fi Direct peers',
-          style: theme.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w800,
+        if (controller.p2pPeers.isEmpty) ...[
+          const SizedBox(height: 12),
+          _EmptyWireless(controller: controller),
+        ],
+      ] else ...[
+        if (group != null) ...[
+          const SizedBox(height: 12),
+          _CredentialBox(
+            title: 'Wi‑Fi Direct Group',
+            ssid: group.networkName,
+            passphrase: group.passphrase,
+            detail:
+                '${group.isGroupOwner ? '本機是 group owner' : '本機是 client'} · ${group.clients.length} client',
           ),
-        ),
-        const SizedBox(height: 8),
-        ...controller.p2pPeers.map(
-          (peer) => _P2pPeerTile(
-            peer: peer,
-            onConnect: () => unawaited(_connectPeer(peer)),
+        ],
+        if (hotspot != null) ...[
+          const SizedBox(height: 12),
+          _CredentialBox(
+            title: 'AIECO 本地熱點',
+            ssidLabel: '實際 SSID',
+            passphraseLabel: '實際密碼',
+            ssid: hotspot.ssid,
+            passphrase: hotspot.preSharedKey,
+            detail: '系統會分配實際 WiFi 名稱和密碼，不能固定為 aiecohk。其他手機請連接上方資料，再打開傳播光聊天。',
           ),
-        ),
+        ],
         const SizedBox(height: 12),
-      ],
-      if (controller.wifiNetworks.isNotEmpty) ...[
-        Text(
-          '附近 WiFi',
-          style: theme.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
-        ),
+        _MeshAutoConnectNotice(controller: controller, meshPeer: meshPeer),
         const SizedBox(height: 8),
-        ...controller.wifiNetworks.map(
-          (network) => _WifiNetworkTile(
-            network: network,
-            selected: selectedWifi?.ssid == network.ssid,
-            onSelect: () => _selectWifi(network),
-            onConnect: () => unawaited(_connectWifi(network)),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: controller.busy
+                    ? null
+                    : () => unawaited(_scanPeersAndConnectMesh()),
+                icon: const Icon(Icons.radar),
+                label: Text(controller.isIOS ? '掃 LAN 並連接' : '掃 P2P 並連接'),
+              ),
+            ),
+          ],
         ),
+        const SizedBox(height: 10),
+        if (controller.p2pPeers.isNotEmpty) ...[
+          Text(
+            controller.isIOS ? 'WiFi LAN peers' : 'Wi‑Fi Direct peers',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...controller.p2pPeers.map(
+            (peer) => _P2pPeerTile(
+              peer: peer,
+              onConnect: () => unawaited(_connectPeer(peer)),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (controller.wifiNetworks.isNotEmpty) ...[
+          Text(
+            '附近 WiFi',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...controller.wifiNetworks.map(
+            (network) => _WifiNetworkTile(
+              network: network,
+              selected: selectedWifi?.ssid == network.ssid,
+              onSelect: () => _selectWifi(network),
+              onConnect: () => unawaited(_connectWifi(network)),
+            ),
+          ),
+        ],
+        if (controller.p2pPeers.isEmpty && controller.wifiNetworks.isEmpty)
+          _EmptyWireless(controller: controller),
       ],
-      if (controller.p2pPeers.isEmpty && controller.wifiNetworks.isEmpty)
-        _EmptyWireless(controller: controller),
       const SizedBox(height: 28),
     ];
 
@@ -7491,18 +7563,22 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: controller.isAndroid
+                    color: isBluetoothMode
+                        ? const Color(0xFFF1EDFF)
+                        : controller.isAndroid
                         ? const Color(0xFFE7F0FF)
                         : const Color(0xFFF3F1EC),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
-                    controller.boundToBluetooth
+                    isBluetoothMode
                         ? Icons.bluetooth_connected
                         : controller.isAndroid
                         ? Icons.wifi_tethering
                         : Icons.wifi,
-                    color: controller.isAndroid
+                    color: isBluetoothMode
+                        ? const Color(0xFF5A46A0)
+                        : controller.isAndroid
                         ? const Color(0xFF285BAA)
                         : const Color(0xFF756D61),
                   ),
@@ -7513,7 +7589,11 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        controller.isIOS ? 'WiFi LAN peers' : 'WiFi P2P / 熱點',
+                        isBluetoothMode
+                            ? '藍芽模式'
+                            : controller.isIOS
+                            ? 'WiFi LAN peers'
+                            : 'WiFi P2P / 熱點',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -7542,6 +7622,11 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
               ],
             ),
             const SizedBox(height: 12),
+            _WirelessModePicker(
+              controller: controller,
+              onChanged: (mode) => unawaited(_setTransportMode(mode)),
+            ),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -7553,50 +7638,24 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                   icon: const Icon(Icons.verified_user_outlined),
                   label: const Text('權限'),
                 ),
-                FilledButton.icon(
-                  onPressed: controller.busy
-                      ? null
-                      : () => unawaited(controller.discoverAppPeers()),
-                  icon: const Icon(Icons.radar),
-                  label: Text(controller.isIOS ? '掃 LAN' : '掃 P2P'),
-                ),
-                if (!controller.isIOS) ...[
-                  OutlinedButton.icon(
+                if (isBluetoothMode) ...[
+                  FilledButton.icon(
                     onPressed: controller.busy
                         ? null
-                        : () => unawaited(controller.createGroup()),
-                    icon: const Icon(Icons.hub_outlined),
-                    label: const Text('開光網'),
+                        : () => unawaited(_refreshBluetoothMode()),
+                    icon: const Icon(Icons.bluetooth_searching),
+                    label: const Text('藍芽刷新'),
                   ),
-                  OutlinedButton.icon(
-                    onPressed: controller.busy
-                        ? null
-                        : () => unawaited(controller.toggleHotspot()),
-                    icon: Icon(
-                      hotspot == null
-                          ? Icons.wifi_tethering
-                          : Icons.stop_circle,
+                  if (!controller.isIOS)
+                    OutlinedButton.icon(
+                      onPressed: controller.busy
+                          ? null
+                          : () => unawaited(
+                              controller.openBluetoothTetherSettings(),
+                            ),
+                      icon: const Icon(Icons.bluetooth_connected),
+                      label: const Text('藍芽熱點'),
                     ),
-                    label: Text(hotspot == null ? '開熱點' : '關熱點'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: controller.busy
-                        ? null
-                        : () => unawaited(
-                            controller.openBluetoothTetherSettings(),
-                          ),
-                    icon: const Icon(Icons.bluetooth_connected),
-                    label: const Text('藍芽熱點'),
-                  ),
-                ],
-                IconButton.outlined(
-                  tooltip: 'WiFi 設定',
-                  onPressed: controller.busy
-                      ? null
-                      : () => unawaited(controller.openWifiSettings()),
-                  icon: const Icon(Icons.settings),
-                ),
-                if (!controller.isIOS)
                   IconButton.outlined(
                     tooltip: '藍芽設定',
                     onPressed: controller.busy
@@ -7604,6 +7663,42 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                         : () => unawaited(controller.openBluetoothSettings()),
                     icon: const Icon(Icons.bluetooth),
                   ),
+                ] else ...[
+                  FilledButton.icon(
+                    onPressed: controller.busy
+                        ? null
+                        : () => unawaited(controller.discoverAppPeers()),
+                    icon: const Icon(Icons.radar),
+                    label: Text(controller.isIOS ? '掃 LAN' : '掃 P2P'),
+                  ),
+                  if (!controller.isIOS) ...[
+                    OutlinedButton.icon(
+                      onPressed: controller.busy
+                          ? null
+                          : () => unawaited(controller.createGroup()),
+                      icon: const Icon(Icons.hub_outlined),
+                      label: const Text('開光網'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: controller.busy
+                          ? null
+                          : () => unawaited(controller.toggleHotspot()),
+                      icon: Icon(
+                        hotspot == null
+                            ? Icons.wifi_tethering
+                            : Icons.stop_circle,
+                      ),
+                      label: Text(hotspot == null ? '開熱點' : '關熱點'),
+                    ),
+                  ],
+                  IconButton.outlined(
+                    tooltip: 'WiFi 設定',
+                    onPressed: controller.busy
+                        ? null
+                        : () => unawaited(controller.openWifiSettings()),
+                    icon: const Icon(Icons.settings),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 12),
@@ -7636,6 +7731,42 @@ class _WifiNotice extends StatelessWidget {
       child: Text(
         controller.lastMessage,
         style: Theme.of(context).textTheme.bodySmall,
+      ),
+    );
+  }
+}
+
+class _WirelessModePicker extends StatelessWidget {
+  const _WirelessModePicker({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final WifiMeshController controller;
+  final ValueChanged<WifiTransportMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: SegmentedButton<WifiTransportMode>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment<WifiTransportMode>(
+            value: WifiTransportMode.bluetooth,
+            icon: Icon(Icons.bluetooth),
+            label: Text('藍芽'),
+          ),
+          ButtonSegment<WifiTransportMode>(
+            value: WifiTransportMode.wifi,
+            icon: Icon(Icons.wifi),
+            label: Text('WiFi'),
+          ),
+        ],
+        selected: {controller.transportMode},
+        onSelectionChanged: controller.busy
+            ? null
+            : (selection) => onChanged(selection.single),
       ),
     );
   }
@@ -7716,14 +7847,17 @@ class _BluetoothHotspotNotice extends StatelessWidget {
   }
 
   String _statusText() {
-    if (!controller.isAndroid) {
-      return '藍芽熱點目前只在支援的系統設定開放。';
+    if (controller.isIOS) {
+      if (controller.boundToBluetooth) {
+        return 'iOS 藍芽模式已啟用 peer-to-peer 搜尋。';
+      }
+      return 'iOS 藍芽模式會使用系統 peer-to-peer 搜尋，不經 WiFi 掃描。';
     }
     if (!controller.bluetoothSupported) {
       return '此裝置未報告藍芽支援。';
     }
     if (controller.boundToBluetooth) {
-      return '已偵測藍芽網絡，沒有 WiFi 本地網絡時會用藍芽網絡通訊。';
+      return '已偵測藍芽網絡，離線聊天會優先經藍芽通訊。';
     }
     if (controller.bluetoothEnabled) {
       return '藍芽已開啟，可到系統設定啟用藍芽網絡共享。';
@@ -7989,6 +8123,14 @@ class _EmptyWireless extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final message = controller.transportMode == WifiTransportMode.bluetooth
+        ? controller.isIOS
+              ? '未有藍芽 peer。先按「權限」，再按「藍芽刷新」。'
+              : '未偵測到藍芽網絡。請先在系統開啟藍芽網絡共享，再按「藍芽刷新」。'
+        : controller.isIOS
+        ? '未有同一 WiFi 內的 app peers。先按「權限」，允許本地網絡，再掃 LAN。'
+        : '未有 Wi‑Fi Direct app peers 或 WiFi 掃描結果。先按「權限」，再掃 P2P。';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -7997,11 +8139,7 @@ class _EmptyWireless extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE0E5DE)),
       ),
-      child: Text(
-        controller.isIOS
-            ? '未有同一 WiFi 內的 app peers。先按「權限」，允許本地網絡，再掃 LAN。'
-            : '未有 Wi‑Fi Direct app peers 或 WiFi 掃描結果。先按「權限」，再掃 P2P。',
-      ),
+      child: Text(message),
     );
   }
 }
@@ -9372,6 +9510,7 @@ class WifiMeshController extends ChangeNotifier {
   bool _bluetoothEnabled = false;
   bool _boundToWifi = false;
   bool _boundToBluetooth = false;
+  WifiTransportMode _transportMode = WifiTransportMode.wifi;
   int _networkGeneration = 0;
   String _lastMessage = '正在讀取 Wi‑Fi mesh 狀態。';
   WifiP2pConnection? _connection;
@@ -9391,6 +9530,7 @@ class WifiMeshController extends ChangeNotifier {
   bool get bluetoothEnabled => _bluetoothEnabled;
   bool get boundToWifi => _boundToWifi;
   bool get boundToBluetooth => _boundToBluetooth;
+  WifiTransportMode get transportMode => _transportMode;
   int get networkGeneration => _networkGeneration;
   String get lastMessage => _lastMessage;
   WifiP2pConnection? get connection => _connection;
@@ -9422,6 +9562,15 @@ class WifiMeshController extends ChangeNotifier {
   }
 
   String get summary {
+    if (_transportMode == WifiTransportMode.bluetooth) {
+      if (_boundToBluetooth) {
+        return '藍芽模式已連線';
+      }
+      if (!_bluetoothSupported) {
+        return isIOS ? 'iOS 藍芽 peer-to-peer 模式' : '此裝置未報告藍芽';
+      }
+      return _bluetoothEnabled ? '等待藍芽網絡' : '藍芽未開啟';
+    }
     if (isIOS) {
       if (_p2pPeers.isNotEmpty) {
         return '已找到 ${_p2pPeers.length} 個 WiFi LAN peer';
@@ -9560,6 +9709,20 @@ class WifiMeshController extends ChangeNotifier {
     await _callStatus('openAppSettings', successMessage: '已打開 app 權限設定。');
   }
 
+  Future<void> setTransportMode(WifiTransportMode mode) async {
+    _transportMode = mode;
+    notifyListeners();
+    await _callStatus(
+      'setTransportMode',
+      arguments: <String, Object?>{'mode': _transportModeName(mode)},
+      successMessage: mode == WifiTransportMode.bluetooth
+          ? '已切換藍芽模式。'
+          : '已切換 WiFi 模式。',
+      showBusy: false,
+      updateMessage: true,
+    );
+  }
+
   Future<void> setPreferLocalNetwork(bool enabled) async {
     await _callStatus(
       'setPreferLocalNetwork',
@@ -9630,6 +9793,7 @@ class WifiMeshController extends ChangeNotifier {
     _bluetoothEnabled = _boolValue(status['bluetoothEnabled']);
     _boundToWifi = _boolValue(status['boundToWifi']);
     _boundToBluetooth = _boolValue(status['boundToBluetooth']);
+    _transportMode = _transportModeFromName(status['transportMode']);
     _networkGeneration = _intValue(status['networkGeneration']);
     _connection = WifiP2pConnection.fromMap(_mapValue(status['connection']));
     _group = WifiDirectGroup.fromMap(_mapValue(status['group']));
@@ -9669,6 +9833,19 @@ class WifiMeshController extends ChangeNotifier {
   }
 
   static bool _boolValue(Object? value) => value == true;
+
+  static WifiTransportMode _transportModeFromName(Object? value) {
+    return value == 'bluetooth'
+        ? WifiTransportMode.bluetooth
+        : WifiTransportMode.wifi;
+  }
+
+  static String _transportModeName(WifiTransportMode mode) {
+    return switch (mode) {
+      WifiTransportMode.bluetooth => 'bluetooth',
+      WifiTransportMode.wifi => 'wifi',
+    };
+  }
 
   static bool get _nativeWirelessBridgeAvailable =>
       Platform.isAndroid || Platform.isIOS;
@@ -10265,6 +10442,7 @@ class MeshChatService extends ChangeNotifier {
     Duration(milliseconds: 1800),
     Duration(milliseconds: 3500),
   ];
+  static const Duration _helloReplyThrottle = Duration(seconds: 8);
   static const Duration _peerTtl = Duration(seconds: 18);
   static const Duration _locationTtl = Duration(minutes: 30);
   static const String _fallbackDistrictCode = 'HK';
@@ -10302,6 +10480,7 @@ class MeshChatService extends ChangeNotifier {
   final Set<String> _seenMessageIds = <String>{};
   final Set<String> _seenRoomIds = <String>{_defaultRoomId};
   final Map<String, DateTime> _lastSyncAt = <String, DateTime>{};
+  final Map<String, DateTime> _lastHelloReplyAt = <String, DateTime>{};
   final Set<String> _blockedUserIds = <String>{};
   final Map<String, String> _blockedUserNames = <String, String>{};
   final Set<String> _hiddenMessageIds = <String>{};
@@ -10318,6 +10497,8 @@ class MeshChatService extends ChangeNotifier {
   MeshNetworkMode _networkMode = _onlineRelayUrl.isEmpty
       ? MeshNetworkMode.offline
       : MeshNetworkMode.online;
+  WifiTransportMode _offlineTransportMode = WifiTransportMode.wifi;
+  bool _offlineTransportReady = true;
   bool _onlineConnecting = false;
   bool _rejoiningTransport = false;
   DeviceLocation? _myLocation;
@@ -10328,6 +10509,7 @@ class MeshChatService extends ChangeNotifier {
   bool _sosActive = false;
   String _status = _onlineRelayUrl.isEmpty ? '正在準備離線 mesh 節點。' : '正在準備線上光之網絡。';
   List<String> _localAddresses = <String>[];
+  List<String> _localBroadcastAddresses = <String>[];
   DateTime? _eulaAcceptedAt;
 
   bool get isRunning => _isRunning;
@@ -10762,6 +10944,7 @@ class MeshChatService extends ChangeNotifier {
     }
 
     _localAddresses = <String>[];
+    _localBroadcastAddresses = <String>[];
     _isRunning = true;
     _status = '正在連接線上光之網絡。';
     notifyListeners();
@@ -10780,6 +10963,9 @@ class MeshChatService extends ChangeNotifier {
   Future<void> _startOfflineTransport() async {
     try {
       _localAddresses = await _loadLocalAddresses();
+      _localBroadcastAddresses = _broadcastAddressesForLocalAddresses(
+        _localAddresses,
+      );
       _tcpServer = await ServerSocket.bind(
         InternetAddress.anyIPv4,
         tcpPort,
@@ -10842,7 +11028,12 @@ class MeshChatService extends ChangeNotifier {
     }
 
     final nextAddresses = await _loadLocalAddresses();
-    final addressesChanged = !_sameStringList(_localAddresses, nextAddresses);
+    final nextBroadcastAddresses = _broadcastAddressesForLocalAddresses(
+      nextAddresses,
+    );
+    final addressesChanged =
+        !_sameStringList(_localAddresses, nextAddresses) ||
+        !_sameStringList(_localBroadcastAddresses, nextBroadcastAddresses);
     if (forceRejoin ||
         addressesChanged ||
         _udpSocket == null ||
@@ -10852,6 +11043,7 @@ class MeshChatService extends ChangeNotifier {
     }
 
     _localAddresses = nextAddresses;
+    _localBroadcastAddresses = nextBroadcastAddresses;
     _announcePresenceBurst();
     _status = '已連到 MESH LAN，正在自動尋找同伴。';
     notifyListeners();
@@ -10888,6 +11080,27 @@ class MeshChatService extends ChangeNotifier {
 
     if (wasRunning && (mode != MeshNetworkMode.online || onlineConfigured)) {
       await start();
+    }
+  }
+
+  void setOfflineTransportMode(WifiTransportMode mode, {required bool ready}) {
+    if (_offlineTransportMode == mode && _offlineTransportReady == ready) {
+      return;
+    }
+
+    _offlineTransportMode = mode;
+    _offlineTransportReady = ready;
+
+    if (_networkMode != MeshNetworkMode.offline) {
+      return;
+    }
+
+    _clearPeerPresence();
+    _status = _offlineTransportStatus();
+    notifyListeners();
+
+    if (_isRunning && _offlineTransportReady) {
+      _announcePresenceBurst();
     }
   }
 
@@ -10976,6 +11189,9 @@ class MeshChatService extends ChangeNotifier {
       _startFuture = null;
       _clearPeerPresence();
       _localAddresses = nextAddresses;
+      _localBroadcastAddresses = _broadcastAddressesForLocalAddresses(
+        nextAddresses,
+      );
 
       await start();
       if (!_isRunning) {
@@ -11011,6 +11227,7 @@ class MeshChatService extends ChangeNotifier {
 
     await _tcpServer?.close();
     _tcpServer = null;
+    _lastHelloReplyAt.clear();
   }
 
   Future<void> _connectOnlineRelay() async {
@@ -11629,9 +11846,13 @@ class MeshChatService extends ChangeNotifier {
       isSosActive: sosActive,
     );
 
+    if (!fromOnline && packet['helloReply'] != true) {
+      unawaited(_sendHelloReply(peerId, remoteHost, peerPort));
+    }
+
     if (fromOnline) {
       unawaited(_throttledOnlineSync(peerId));
-    } else if (discoveredByUdp) {
+    } else if (discoveredByUdp || packet['helloReply'] == true) {
       unawaited(_throttledSync(remoteHost, peerPort));
     } else {
       unawaited(_syncRecentState(remoteHost, peerPort));
@@ -11932,14 +12153,11 @@ class MeshChatService extends ChangeNotifier {
       unawaited(_sendPacketToOnline(_helloPacket()));
       return;
     }
-
-    final socket = _udpSocket;
-    if (socket == null) {
+    if (!_offlineTransportReady) {
       return;
     }
 
-    final bytes = utf8.encode('${jsonEncode(_helloPacket())}\n');
-    socket.send(bytes, InternetAddress('255.255.255.255'), discoveryPort);
+    _sendUdpDiscoveryPacket(_helloPacket());
   }
 
   void _announcePresenceBurst() {
@@ -11965,16 +12183,18 @@ class MeshChatService extends ChangeNotifier {
       unawaited(_sendPacketToOnline(packet));
       return;
     }
+    if (!_offlineTransportReady) {
+      return;
+    }
 
     final socket = _udpSocket;
     if (socket != null) {
-      final bytes = utf8.encode('${jsonEncode(packet)}\n');
-      socket.send(bytes, InternetAddress('255.255.255.255'), discoveryPort);
+      _sendUdpDiscoveryPacket(packet);
     }
     unawaited(_sendPacketToPeers(packet));
   }
 
-  Map<String, Object?> _helloPacket() {
+  Map<String, Object?> _helloPacket({bool reply = false}) {
     final location = _myLocation;
     return <String, Object?>{
       'kind': _helloKind,
@@ -11982,6 +12202,7 @@ class MeshChatService extends ChangeNotifier {
       'nodeId': _nodeId,
       'name': _displayName,
       'tcpPort': tcpPort,
+      if (reply) 'helloReply': true,
       'sosActive': _sosActive,
       'sentAt': DateTime.now().toUtc().toIso8601String(),
       'site': 'AIECO.HK',
@@ -12046,6 +12267,9 @@ class MeshChatService extends ChangeNotifier {
     if (_networkMode == MeshNetworkMode.online) {
       return await _sendPacketToOnline(packet) ? 1 : 0;
     }
+    if (!_offlineTransportReady) {
+      return 0;
+    }
 
     return _sendPacketToPeers(
       packet,
@@ -12061,10 +12285,24 @@ class MeshChatService extends ChangeNotifier {
       }
       return delivered == 0 ? '線上光之網絡暫未連線。訊息已留在本機，重連後會同步最近訊息。' : '訊息已送到線上光之網絡。';
     }
+    if (!_offlineTransportReady) {
+      return _offlineTransportStatus();
+    }
 
     return delivered == 0
         ? '未找到其他已開啟本 app 的節點。訊息已留在本機，連到同一 WiFi / mesh LAN 後會自動傳播。'
         : '訊息已送往 $delivered 個節點，並會由節點繼續轉傳。';
+  }
+
+  String _offlineTransportStatus() {
+    if (_offlineTransportMode == WifiTransportMode.bluetooth) {
+      return _offlineTransportReady
+          ? '藍芽模式已就緒，正在尋找藍芽光點。'
+          : '藍芽模式未連上。訊息已留在本機，請先建立藍芽網絡後再刷新。';
+    }
+    return _offlineTransportReady
+        ? 'WiFi 模式已就緒，正在同一 WiFi / mesh LAN 尋找同伴。'
+        : 'WiFi 模式未連上。訊息已留在本機，請先連接同一 WiFi / 熱點。';
   }
 
   Future<bool> _sendPacketToOnline(Map<String, Object?> packet) async {
@@ -12131,6 +12369,44 @@ class MeshChatService extends ChangeNotifier {
       socket?.destroy();
       return false;
     }
+  }
+
+  Future<void> _sendHelloReply(
+    String peerId,
+    String remoteHost,
+    int peerPort,
+  ) async {
+    final key = '$peerId@$remoteHost:$peerPort';
+    final previous = _lastHelloReplyAt[key];
+    if (previous != null &&
+        DateTime.now().difference(previous) < _helloReplyThrottle) {
+      return;
+    }
+
+    _lastHelloReplyAt[key] = DateTime.now();
+    await _sendJson(remoteHost, peerPort, _helloPacket(reply: true));
+  }
+
+  void _sendUdpDiscoveryPacket(Map<String, Object?> packet) {
+    final socket = _udpSocket;
+    if (socket == null) {
+      return;
+    }
+
+    final bytes = utf8.encode('${jsonEncode(packet)}\n');
+    for (final target in _udpDiscoveryTargets()) {
+      try {
+        socket.send(bytes, target, discoveryPort);
+      } on Object {
+        // Some Android Bluetooth PAN / Wi-Fi Direct interfaces reject one of
+        // the broadcast forms; the remaining targets can still work.
+      }
+    }
+  }
+
+  List<InternetAddress> _udpDiscoveryTargets() {
+    final targets = <String>{'255.255.255.255', ..._localBroadcastAddresses};
+    return targets.map(InternetAddress.new).toList(growable: false);
   }
 
   Future<void> _throttledSync(String host, int port) async {
@@ -12681,6 +12957,30 @@ class MeshChatService extends ChangeNotifier {
     } on Object {
       return <String>[];
     }
+  }
+
+  static List<String> _broadcastAddressesForLocalAddresses(
+    List<String> addresses,
+  ) {
+    final broadcasts = <String>{};
+    for (final address in addresses) {
+      final parts = address.split('.');
+      if (parts.length != 4) {
+        continue;
+      }
+
+      final octets = parts.map(int.tryParse).toList(growable: false);
+      if (octets.any((octet) => octet == null || octet < 0 || octet > 255)) {
+        continue;
+      }
+      if (octets.first == 0 || octets.first == 127) {
+        continue;
+      }
+
+      broadcasts.add('${octets[0]}.${octets[1]}.${octets[2]}.255');
+    }
+
+    return broadcasts.toList()..sort();
   }
 
   static bool _sameStringList(List<String> left, List<String> right) {
