@@ -75,6 +75,41 @@ void main() {
   );
 
   test(
+    'MeshChatService saves editable user name while preserving light point name',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final mesh = MeshChatService();
+      addTearDown(mesh.dispose);
+      await mesh.loadSavedDisplayName();
+
+      final lightPointName = mesh.displayName;
+      expect(mesh.userName, '光之子');
+      expect(mesh.identityName, '光之子 · $lightPointName');
+
+      final updated = mesh.setUserName('小明');
+      expect(updated, isTrue);
+      expect(mesh.userName, '小明');
+      expect(mesh.displayName, lightPointName);
+      expect(mesh.identityName, '小明 · $lightPointName');
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('mesh.userName'), '小明');
+
+      final sent = await mesh.sendMessage('新的身份測試');
+      expect(sent, isTrue);
+      final message = mesh.messages.single;
+      expect(message.senderName, '小明 · $lightPointName');
+
+      final packet = message.toPacket();
+      expect(packet['senderName'], lightPointName);
+      expect(packet['senderUserName'], '小明');
+      await mesh.stop();
+    },
+  );
+
+  test(
     'MeshChatService updates fallback display name prefix from location',
     () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -131,6 +166,7 @@ void main() {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'mesh.nodeId': 'node-existing',
         'mesh.displayName': 'HK1234567',
+        'mesh.userName': '舊用戶',
         'mesh.eulaAcceptedAt': DateTime.utc(2026).toIso8601String(),
         'mesh.blockedUsers': <String>['peer-1'],
         'mesh.blockedUserNames': '{"peer-1":"惡意光點"}',
@@ -148,6 +184,7 @@ void main() {
 
       expect(oldNodeId, 'node-existing');
       expect(oldDisplayName, 'HK1234567');
+      expect(mesh.userName, '舊用戶');
       expect(mesh.eulaAccepted, isTrue);
       expect(mesh.blockedUsers, hasLength(1));
 
@@ -174,6 +211,7 @@ void main() {
       final newDisplayName = mesh.displayName;
       expect(prefs.getString('mesh.nodeId'), newNodeId);
       expect(prefs.getString('mesh.displayName'), newDisplayName);
+      expect(prefs.getString('mesh.userName'), '光之子');
       expect(prefs.getString('mesh.eulaAcceptedAt'), isNull);
       expect(prefs.getStringList('mesh.blockedUsers'), isNull);
       expect(prefs.getString('mesh.blockedUserNames'), isNull);
@@ -312,6 +350,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('account-privacy-entry')));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('delete-account-button')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('delete-account-button')));
     await tester.pumpAndSettle();
     expect(find.text('刪除本機帳號與資料？'), findsOneWidget);
@@ -320,6 +362,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('本機帳號與資料已刪除'), findsWidgets);
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('delete-account-button')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('delete-account-button')));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '刪除'));
@@ -492,14 +538,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('online-user-me')));
     await tester.pumpAndSettle();
 
-    final quotedUserInput = tester.widget<TextField>(
-      find.byKey(const ValueKey('chat-message-input')),
+    expect(find.text('更改用戶名稱'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('quick-user-name-input')),
+      '守光者',
     );
-    expect(
-      quotedUserInput.controller?.text,
-      matches(RegExp(r'^@[A-Z]{1,3}\d{7} $')),
-    );
-    quotedUserInput.controller?.clear();
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, '儲存'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('用戶名稱已更新：守光者'), findsWidgets);
 
     await tester.tap(find.text('光團'));
     await tester.pumpAndSettle();
@@ -599,7 +646,7 @@ void main() {
     );
     expect(
       supplyReplyInput.controller?.text,
-      matches(RegExp(r'^@[A-Z]{1,3}\d{7} $')),
+      matches(RegExp(r'^@守光者 · [A-Z]{1,3}\d{7} $')),
     );
     supplyReplyInput.controller?.clear();
 

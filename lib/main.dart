@@ -418,6 +418,19 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     );
   }
 
+  Future<void> _editUserName() async {
+    final nextName = await showDialog<String>(
+      context: context,
+      builder: (_) => _UserNameEditDialog(initialUserName: _mesh.userName),
+    );
+    if (nextName == null || !mounted) {
+      return;
+    }
+
+    _mesh.setUserName(nextName);
+    _showMeshStatusSnack();
+  }
+
   Future<void> _confirmDeleteAccount() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -425,7 +438,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
         return AlertDialog(
           title: const Text('刪除本機帳號與資料？'),
           content: const Text(
-            '這會停止光之網絡，刪除本機光點身份、名稱、條款狀態、封鎖名單、隱藏訊息、舉報記錄、目前訊息、物資和定位快取，並建立新的匿名光點身份。刪除帳號功能 1 天內只可使用 1 次。',
+            '這會停止光之網絡，刪除本機光點身份、光點名稱、用戶名稱、條款狀態、封鎖名單、隱藏訊息、舉報記錄、目前訊息、物資和定位快取，並建立新的匿名光點身份。刪除帳號功能 1 天內只可使用 1 次。',
           ),
           actions: [
             TextButton(
@@ -1060,7 +1073,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
 
     _radarTrackingBusy = true;
     try {
-      final location = await _radar.locate(_mesh.displayName, quiet: quiet);
+      final location = await _radar.locate(_mesh.identityName, quiet: quiet);
       if (location != null &&
           _shouldReplaceLocation(_mesh.myLocation, location)) {
         _mesh.updateLocation(location);
@@ -1209,6 +1222,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
             toolbarHeight: 86,
             title: _AppHeaderTitle(
               displayName: _mesh.displayName,
+              userName: _mesh.userName,
               onOpenAccountPrivacy: _openAccountPrivacyCenter,
             ),
             actions: [
@@ -1251,7 +1265,10 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final isNetworkWide = constraints.maxWidth >= 860;
-                final sidePanel = _StatusAndPeersPanel(mesh: _mesh);
+                final sidePanel = _StatusAndPeersPanel(
+                  mesh: _mesh,
+                  onEditUserName: () => unawaited(_editUserName()),
+                );
                 final wifiPanel = _WifiMeshPanel(
                   controller: _wifiMesh,
                   onNetworkReady: _wakeMeshAfterWifiReady,
@@ -1266,6 +1283,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                   onCreateRoom: _createRoom,
                   onShareSupply: _shareSupply,
                   onQuoteUserName: _quoteContactNameForChat,
+                  onEditUserName: () => unawaited(_editUserName()),
                   onOpenSafetyCenter: _openChatSafetyCenter,
                   onReportMessage: _reportMessage,
                   onBlockUser: _blockUser,
@@ -1278,6 +1296,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                   enableWebView: widget.enableWebView,
                   onLocate: () => unawaited(_locateRadar()),
                   onQuoteContactName: _quoteContactNameForChat,
+                  onEditUserName: () => unawaited(_editUserName()),
                 );
 
                 return TabBarView(
@@ -1308,16 +1327,23 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
 class _AppHeaderTitle extends StatelessWidget {
   const _AppHeaderTitle({
     required this.displayName,
+    required this.userName,
     required this.onOpenAccountPrivacy,
   });
 
   final String displayName;
+  final String userName;
   final VoidCallback onOpenAccountPrivacy;
 
   @override
   Widget build(BuildContext context) {
+    final identityName = MeshChatService._identityName(
+      userName: userName,
+      displayName: displayName,
+    );
+
     return Tooltip(
-      message: '帳號與私隱 · 光之身份證 · 光點名稱 $displayName',
+      message: '帳號與私隱 · 光之身份證 · $identityName',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -1411,15 +1437,15 @@ class _AppHeaderTitle extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        const Text(
-                          '帳號與私隱',
+                        Text(
+                          userName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Color(0xFF6D7D75),
-                            fontSize: 8,
+                          style: const TextStyle(
+                            color: Color(0xFF0D4F43),
+                            fontSize: 13,
                             height: 1,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w900,
                             letterSpacing: 0,
                           ),
                         ),
@@ -1428,10 +1454,10 @@ class _AppHeaderTitle extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Color(0xFF0D4F43),
-                            fontSize: 17,
+                            color: Color(0xFF345B58),
+                            fontSize: 11,
                             height: 1,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                             letterSpacing: 0,
                           ),
                         ),
@@ -3050,7 +3076,76 @@ class _EulaAgreementDialog extends StatelessWidget {
   }
 }
 
-class _AccountPrivacySheet extends StatelessWidget {
+class _UserNameEditDialog extends StatefulWidget {
+  const _UserNameEditDialog({required this.initialUserName});
+
+  final String initialUserName;
+
+  @override
+  State<_UserNameEditDialog> createState() => _UserNameEditDialogState();
+}
+
+class _UserNameEditDialogState extends State<_UserNameEditDialog> {
+  late final TextEditingController _controller;
+  late String _draftName;
+
+  @override
+  void initState() {
+    super.initState();
+    _draftName = widget.initialUserName;
+    _controller = TextEditingController(text: widget.initialUserName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final cleanName = _draftName.trim();
+    if (cleanName.isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(cleanName);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canSave = _draftName.trim().isNotEmpty;
+
+    return AlertDialog(
+      title: const Text('更改用戶名稱'),
+      content: TextField(
+        key: const ValueKey('quick-user-name-input'),
+        controller: _controller,
+        autofocus: true,
+        maxLength: MeshChatService._maxUserNameLength,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(
+          labelText: '用戶名稱',
+          prefixIcon: Icon(Icons.person_outline),
+          counterText: '',
+        ),
+        onChanged: (value) => setState(() => _draftName = value),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton.icon(
+          onPressed: canSave ? _submit : null,
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('儲存'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AccountPrivacySheet extends StatefulWidget {
   const _AccountPrivacySheet({
     required this.mesh,
     required this.onDeleteAccount,
@@ -3060,7 +3155,45 @@ class _AccountPrivacySheet extends StatelessWidget {
   final Future<void> Function() onDeleteAccount;
 
   @override
+  State<_AccountPrivacySheet> createState() => _AccountPrivacySheetState();
+}
+
+class _AccountPrivacySheetState extends State<_AccountPrivacySheet> {
+  late final TextEditingController _userNameController;
+
+  @override
+  void initState() {
+    super.initState();
+    _userNameController = TextEditingController(text: widget.mesh.userName);
+  }
+
+  @override
+  void dispose() {
+    _userNameController.dispose();
+    super.dispose();
+  }
+
+  void _saveUserName() {
+    final updated = widget.mesh.setUserName(_userNameController.text);
+    if (updated) {
+      _userNameController.value = TextEditingValue(
+        text: widget.mesh.userName,
+        selection: TextSelection.collapsed(offset: widget.mesh.userName.length),
+      );
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(widget.mesh.status),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final mesh = widget.mesh;
+
     return ListenableBuilder(
       listenable: mesh,
       builder: (context, _) {
@@ -3100,7 +3233,7 @@ class _AccountPrivacySheet extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '目前光點：${mesh.displayName}',
+                            '目前身份：${mesh.identityName}',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: const Color(0xFF566B60)),
                           ),
@@ -3113,14 +3246,56 @@ class _AccountPrivacySheet extends StatelessWidget {
                 _SafetyStatusCard(
                   icon: Icons.badge_outlined,
                   title: '本機匿名帳號',
-                  body:
-                      '傳播光不使用帳密登入。App 會在本機建立匿名光點身份和名稱，用於聊天、光團、物資、信用、SOS 和雷達同步。',
+                  body: '傳播光不使用帳密登入。App 會在本機建立匿名光點身份和固定光點名稱；用戶名稱可以自行更改。',
+                ),
+                _SafetyStatusCard(
+                  icon: Icons.person_outline,
+                  title: '用戶名稱',
+                  body: '聊天室和地圖會顯示「用戶名稱 · 光點名稱」。',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        key: const ValueKey('user-name-input'),
+                        controller: _userNameController,
+                        maxLength: MeshChatService._maxUserNameLength,
+                        textInputAction: TextInputAction.done,
+                        decoration: const InputDecoration(
+                          labelText: '用戶名稱',
+                          prefixIcon: Icon(Icons.person_outline),
+                          counterText: '',
+                        ),
+                        onSubmitted: (_) => _saveUserName(),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          FilledButton.icon(
+                            key: const ValueKey('save-user-name-button'),
+                            onPressed: _saveUserName,
+                            icon: const Icon(Icons.save_outlined),
+                            label: const Text('儲存用戶名稱'),
+                          ),
+                          Chip(
+                            avatar: const Icon(Icons.lock_outline, size: 16),
+                            label: Text('光點名稱：${mesh.displayName}'),
+                            side: const BorderSide(color: Color(0xFFD7DED7)),
+                            backgroundColor: const Color(0xFFFAFBF7),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
                 _SafetyStatusCard(
                   icon: Icons.storage_outlined,
                   title: '本機儲存資料',
                   body:
-                      '本機會儲存光點身份、名稱、條款同意時間、封鎖名單、隱藏訊息和舉報記錄；目前工作階段中的訊息、物資、信用和定位快取也會在刪除時一併清除。',
+                      '本機會儲存光點身份、光點名稱、用戶名稱、條款同意時間、封鎖名單、隱藏訊息和舉報記錄；目前工作階段中的訊息、物資、信用和定位快取也會在刪除時一併清除。',
                 ),
                 _SafetyStatusCard(
                   icon: Icons.delete_forever_outlined,
@@ -3135,7 +3310,7 @@ class _AccountPrivacySheet extends StatelessWidget {
                         backgroundColor: const Color(0xFFB3261E),
                         foregroundColor: Colors.white,
                       ),
-                      onPressed: () => unawaited(onDeleteAccount()),
+                      onPressed: () => unawaited(widget.onDeleteAccount()),
                       icon: const Icon(Icons.delete_forever),
                       label: const Text('刪除本機帳號與資料'),
                     ),
@@ -3819,6 +3994,7 @@ class _LightRadarPanel extends StatefulWidget {
     required this.enableWebView,
     required this.onLocate,
     required this.onQuoteContactName,
+    required this.onEditUserName,
   });
 
   final MeshChatService mesh;
@@ -3826,6 +4002,7 @@ class _LightRadarPanel extends StatefulWidget {
   final bool enableWebView;
   final VoidCallback onLocate;
   final ValueChanged<String> onQuoteContactName;
+  final VoidCallback onEditUserName;
 
   @override
   State<_LightRadarPanel> createState() => _LightRadarPanelState();
@@ -3938,12 +4115,15 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                   runSpacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Chip(
+                    ActionChip(
+                      key: const ValueKey('radar-user-name-chip'),
                       avatar: const Icon(Icons.person_pin_circle, size: 16),
-                      label: Text(widget.mesh.displayName),
+                      label: Text(widget.mesh.identityName),
                       side: const BorderSide(color: Color(0xFFD7DED7)),
                       backgroundColor: const Color(0xFFE0F2E9),
                       visualDensity: VisualDensity.compact,
+                      tooltip: '更改用戶名稱',
+                      onPressed: widget.onEditUserName,
                     ),
                     SegmentedButton<_RadarMapMode>(
                       showSelectedIcon: false,
@@ -3989,7 +4169,7 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                       enabled: widget.enableWebView,
                       apiKey: _googleMapsApiKey,
                       mapId: _googleMapsMapId,
-                      displayName: widget.mesh.displayName,
+                      displayName: widget.mesh.identityName,
                       location: location,
                       contacts: contacts,
                       nearbyContactIds: nearbyContactIds,
@@ -4163,7 +4343,7 @@ class _ClosestRadarStrip extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Tooltip(
-                            message: '引用光點名稱聊天',
+                            message: '引用名稱聊天',
                             child: IconButton.filledTonal(
                               onPressed: () => onQuoteContactName(contact.name),
                               icon: const Icon(Icons.format_quote, size: 18),
@@ -4260,7 +4440,7 @@ class _SosRadarStrip extends StatelessWidget {
                     if (!contact.isMe) ...[
                       const SizedBox(width: 4),
                       Tooltip(
-                        message: '引用求救光點名稱聊天',
+                        message: '引用求救名稱聊天',
                         child: IconButton.filledTonal(
                           onPressed: () => onQuoteContactName(contact.name),
                           icon: const Icon(Icons.format_quote, size: 18),
@@ -5187,7 +5367,7 @@ class _MapContactQuoteAction extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Tooltip(
-                message: '引用光點名稱聊天',
+                message: '引用名稱聊天',
                 child: IconButton.filledTonal(
                   onPressed: () => onQuoteContactName(contact.name),
                   icon: const Icon(Icons.format_quote, size: 18),
@@ -7063,9 +7243,13 @@ class _SosPulse {
 }
 
 class _StatusAndPeersPanel extends StatelessWidget {
-  const _StatusAndPeersPanel({required this.mesh});
+  const _StatusAndPeersPanel({
+    required this.mesh,
+    required this.onEditUserName,
+  });
 
   final MeshChatService mesh;
+  final VoidCallback onEditUserName;
 
   @override
   Widget build(BuildContext context) {
@@ -7147,52 +7331,73 @@ class _StatusAndPeersPanel extends StatelessWidget {
               const SizedBox(height: 10),
               _NetworkModeNotice(mesh: mesh),
               const SizedBox(height: 12),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFAFBF7),
-                  border: Border.all(color: const Color(0xFFD7DED7)),
+              Tooltip(
+                message: '更改用戶名稱',
+                child: InkWell(
+                  key: const ValueKey('network-user-name-card'),
                   borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.badge_outlined,
-                        color: Color(0xFF0D7C66),
+                  onTap: onEditUserName,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFAFBF7),
+                      border: Border.all(color: const Color(0xFFD7DED7)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '你的光點名稱',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: const Color(0xFF66756D)),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.badge_outlined,
+                            color: Color(0xFF0D7C66),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '你的用戶名稱',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: const Color(0xFF66756D),
+                                      ),
+                                ),
+                                Text(
+                                  mesh.userName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0,
+                                      ),
+                                ),
+                                Text(
+                                  '光點名稱：${mesh.displayName}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: const Color(0xFF4B5F56),
+                                      ),
+                                ),
+                              ],
                             ),
-                            Text(
-                              mesh.displayName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0,
-                                  ),
-                            ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Icon(Icons.edit_outlined, size: 20),
+                          const SizedBox(width: 8),
+                          const Tooltip(
+                            message: '光點名稱固定，不能更改',
+                            child: Icon(Icons.lock_outline, size: 20),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 10),
-                      const Tooltip(
-                        message: '光點名稱固定，不能更改',
-                        child: Icon(Icons.lock_outline, size: 20),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -8159,6 +8364,7 @@ class _ChatPanel extends StatefulWidget {
     required this.onCreateRoom,
     required this.onShareSupply,
     required this.onQuoteUserName,
+    required this.onEditUserName,
     required this.onOpenSafetyCenter,
     required this.onReportMessage,
     required this.onBlockUser,
@@ -8173,6 +8379,7 @@ class _ChatPanel extends StatefulWidget {
   final Future<void> Function() onCreateRoom;
   final Future<void> Function() onShareSupply;
   final ValueChanged<String> onQuoteUserName;
+  final VoidCallback onEditUserName;
   final VoidCallback onOpenSafetyCenter;
   final ValueChanged<MeshMessage> onReportMessage;
   final void Function(String userId, String userName) onBlockUser;
@@ -8247,6 +8454,7 @@ class _ChatPanelState extends State<_ChatPanel> {
         key: const ValueKey('chat-tools-users'),
         users: widget.mesh.onlineUsers,
         onQuoteUserName: widget.onQuoteUserName,
+        onEditUserName: widget.onEditUserName,
         onLikeUser: widget.mesh.likeUser,
         onReportUser: widget.onReportUser,
         onBlockUser: widget.onBlockUser,
@@ -8409,6 +8617,7 @@ class _OnlineUsersStrip extends StatelessWidget {
     super.key,
     required this.users,
     required this.onQuoteUserName,
+    required this.onEditUserName,
     required this.onLikeUser,
     required this.onReportUser,
     required this.onBlockUser,
@@ -8417,6 +8626,7 @@ class _OnlineUsersStrip extends StatelessWidget {
 
   final List<MeshOnlineUser> users;
   final ValueChanged<String> onQuoteUserName;
+  final VoidCallback onEditUserName;
   final ValueChanged<String> onLikeUser;
   final ValueChanged<MeshOnlineUser> onReportUser;
   final void Function(String userId, String userName) onBlockUser;
@@ -8532,8 +8742,10 @@ class _OnlineUsersStrip extends StatelessWidget {
                         visualDensity: VisualDensity.compact,
                         side: BorderSide.none,
                         backgroundColor: Colors.transparent,
-                        tooltip: '引用用戶名稱聊天',
-                        onPressed: () => onQuoteUserName(user.name),
+                        tooltip: user.isMe ? '更改用戶名稱' : '引用名稱聊天',
+                        onPressed: user.isMe
+                            ? onEditUserName
+                            : () => onQuoteUserName(user.name),
                       ),
                       Tooltip(
                         message: user.isMe
@@ -8665,7 +8877,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                         key: const ValueKey('online-user-search-input'),
                         autofocus: true,
                         decoration: const InputDecoration(
-                          labelText: '搜尋光點名稱',
+                          labelText: '搜尋用戶或光點名稱',
                           prefixIcon: Icon(Icons.search),
                         ),
                         onChanged: (value) {
@@ -8695,6 +8907,10 @@ class _OnlineUsersStrip extends StatelessWidget {
                               final user = filteredUsers[index];
                               return _OnlineUserListTile(
                                 user: user,
+                                onEditUserName: () {
+                                  Navigator.of(sheetContext).pop();
+                                  onEditUserName();
+                                },
                                 onQuoteUserName: (name) {
                                   Navigator.of(sheetContext).pop();
                                   onQuoteUserName(name);
@@ -8730,6 +8946,7 @@ class _OnlineUsersStrip extends StatelessWidget {
 class _OnlineUserListTile extends StatelessWidget {
   const _OnlineUserListTile({
     required this.user,
+    required this.onEditUserName,
     required this.onQuoteUserName,
     required this.onLikeUser,
     required this.onReportUser,
@@ -8737,6 +8954,7 @@ class _OnlineUserListTile extends StatelessWidget {
   });
 
   final MeshOnlineUser user;
+  final VoidCallback onEditUserName;
   final ValueChanged<String> onQuoteUserName;
   final ValueChanged<String> onLikeUser;
   final ValueChanged<MeshOnlineUser> onReportUser;
@@ -8785,9 +9003,11 @@ class _OnlineUserListTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            tooltip: '引用用戶名稱聊天',
-            onPressed: () => onQuoteUserName(user.name),
-            icon: const Icon(Icons.format_quote),
+            tooltip: user.isMe ? '更改用戶名稱' : '引用名稱聊天',
+            onPressed: user.isMe
+                ? onEditUserName
+                : () => onQuoteUserName(user.name),
+            icon: Icon(user.isMe ? Icons.edit_outlined : Icons.format_quote),
           ),
           IconButton(
             tooltip: user.isMe
@@ -8836,7 +9056,7 @@ class _OnlineUserListTile extends StatelessWidget {
             ),
         ],
       ),
-      onTap: () => onQuoteUserName(user.name),
+      onTap: user.isMe ? onEditUserName : () => onQuoteUserName(user.name),
     );
   }
 }
@@ -9986,6 +10206,8 @@ class RadarContact {
   const RadarContact({
     required this.id,
     required this.name,
+    this.displayName = '',
+    this.userName = '',
     required this.location,
     required this.isMe,
     required this.isSosActive,
@@ -9994,6 +10216,8 @@ class RadarContact {
 
   final String id;
   final String name;
+  final String displayName;
+  final String userName;
   final DeviceLocation location;
   final bool isMe;
   final bool isSosActive;
@@ -10391,7 +10615,8 @@ class MeshModerationReport {
 class MeshChatService extends ChangeNotifier {
   MeshChatService()
     : _nodeId = _newId('node'),
-      _displayName = _newDisplayName() {
+      _displayName = _newDisplayName(),
+      _userName = _defaultUserName {
     _seenMessageIds.add(_nodeId);
     _rooms[_defaultRoomId] = MeshRoom(
       id: _defaultRoomId,
@@ -10415,6 +10640,7 @@ class MeshChatService extends ChangeNotifier {
   static const String _appName = 'AIECO.HK 傳播光';
   static const String _nodeIdPrefsKey = 'mesh.nodeId';
   static const String _displayNamePrefsKey = 'mesh.displayName';
+  static const String _userNamePrefsKey = 'mesh.userName';
   static const String _eulaAcceptedPrefsKey = 'mesh.eulaAcceptedAt';
   static const String _blockedUsersPrefsKey = 'mesh.blockedUsers';
   static const String _blockedUserNamesPrefsKey = 'mesh.blockedUserNames';
@@ -10425,6 +10651,7 @@ class MeshChatService extends ChangeNotifier {
   static const List<String> _accountDataPrefsKeys = <String>[
     _nodeIdPrefsKey,
     _displayNamePrefsKey,
+    _userNamePrefsKey,
     _eulaAcceptedPrefsKey,
     _blockedUsersPrefsKey,
     _blockedUserNamesPrefsKey,
@@ -10446,6 +10673,8 @@ class MeshChatService extends ChangeNotifier {
   static const Duration _peerTtl = Duration(seconds: 18);
   static const Duration _locationTtl = Duration(minutes: 30);
   static const String _fallbackDistrictCode = 'HK';
+  static const String _defaultUserName = '光之子';
+  static const int _maxUserNameLength = 24;
   static const Map<String, String> _districtCodes = <String, String>{
     '屯門區': 'TM',
     '元朗區': 'YL',
@@ -10503,6 +10732,7 @@ class MeshChatService extends ChangeNotifier {
   bool _rejoiningTransport = false;
   DeviceLocation? _myLocation;
   String _displayName;
+  String _userName;
   String _activeRoomId = _defaultRoomId;
   bool _isRunning = false;
   bool _disposed = false;
@@ -10519,6 +10749,9 @@ class MeshChatService extends ChangeNotifier {
       _onlineSocket != null && _onlineSocket?.readyState == WebSocket.open;
   String get onlineRelayUrl => _onlineRelayUrl;
   String get displayName => _displayName;
+  String get userName => _userName;
+  String get identityName =>
+      _identityName(userName: _userName, displayName: _displayName);
   String get status => _status;
   List<String> get localAddresses => List.unmodifiable(_localAddresses);
   DeviceLocation? get myLocation => _myLocation;
@@ -10551,7 +10784,9 @@ class MeshChatService extends ChangeNotifier {
       if (_myLocation != null)
         RadarContact(
           id: _nodeId,
-          name: _displayName,
+          name: identityName,
+          displayName: _displayName,
+          userName: _userName,
           location: _myLocation!,
           isMe: true,
           isSosActive: _sosActive,
@@ -10631,7 +10866,9 @@ class MeshChatService extends ChangeNotifier {
     final values = <MeshOnlineUser>[
       MeshOnlineUser(
         id: _nodeId,
-        name: _displayName,
+        name: identityName,
+        displayName: _displayName,
+        userName: _userName,
         isMe: true,
         lastSeen: DateTime.now(),
         creditScore: creditScoreFor(_nodeId),
@@ -10642,6 +10879,8 @@ class MeshChatService extends ChangeNotifier {
         (peer) => MeshOnlineUser(
           id: peer.id,
           name: peer.name,
+          displayName: peer.displayName,
+          userName: peer.userName,
           isMe: false,
           lastSeen: peer.lastSeen,
           creditScore: creditScoreFor(peer.id),
@@ -10718,10 +10957,12 @@ class MeshChatService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final savedNodeId = prefs.getString(_nodeIdPrefsKey);
       final savedName = prefs.getString(_displayNamePrefsKey);
+      final savedUserName = prefs.getString(_userNamePrefsKey);
       final nextNodeId = _isNodeId(savedNodeId) ? savedNodeId! : _nodeId;
       final nextName = _isSixDigitDisplayName(savedName)
           ? savedName!
           : _displayName;
+      final nextUserName = _savedUserNameOrDefault(savedUserName);
 
       if (savedNodeId != nextNodeId) {
         await prefs.setString(_nodeIdPrefsKey, nextNodeId);
@@ -10731,11 +10972,18 @@ class MeshChatService extends ChangeNotifier {
         await prefs.setString(_displayNamePrefsKey, nextName);
       }
 
+      if (savedUserName != nextUserName) {
+        await prefs.setString(_userNamePrefsKey, nextUserName);
+      }
+
       if (_disposed) {
         return;
       }
 
-      final identityChanged = nextNodeId != _nodeId || nextName != _displayName;
+      final identityChanged =
+          nextNodeId != _nodeId ||
+          nextName != _displayName ||
+          nextUserName != _userName;
       if (!identityChanged) {
         return;
       }
@@ -10743,6 +10991,7 @@ class MeshChatService extends ChangeNotifier {
       final previousNodeId = _nodeId;
       _nodeId = nextNodeId;
       _displayName = nextName;
+      _userName = nextUserName;
       if (previousNodeId != _nodeId) {
         _seenMessageIds.remove(previousNodeId);
         _seenMessageIds.add(_nodeId);
@@ -10830,6 +11079,15 @@ class MeshChatService extends ChangeNotifier {
     }
   }
 
+  Future<void> _saveUserName(String value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_userNamePrefsKey, value);
+    } on Object {
+      // Tests and unsupported platforms may not have the preferences plugin.
+    }
+  }
+
   Future<bool> deleteLocalAccountAndData() async {
     final now = DateTime.now();
     SharedPreferences? prefs;
@@ -10856,6 +11114,7 @@ class MeshChatService extends ChangeNotifier {
 
     _nodeId = _newId('node');
     _displayName = _newDisplayName();
+    _userName = _defaultUserName;
     _myLocation = null;
     _sosActive = false;
     _activeRoomId = _defaultRoomId;
@@ -10891,6 +11150,7 @@ class MeshChatService extends ChangeNotifier {
       }
       await prefs.setString(_nodeIdPrefsKey, _nodeId);
       await prefs.setString(_displayNamePrefsKey, _displayName);
+      await prefs.setString(_userNamePrefsKey, _userName);
       await prefs.setString(
         _accountDeletionLastAtPrefsKey,
         now.toUtc().toIso8601String(),
@@ -11339,6 +11599,41 @@ class MeshChatService extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool setUserName(String value) {
+    final clean = _cleanUserName(value);
+    if (clean.isEmpty) {
+      _status = '請先輸入用戶名稱。';
+      notifyListeners();
+      return false;
+    }
+
+    final moderation = MeshContentModeration.check(clean);
+    if (!moderation.allowed) {
+      _status = moderation.reason;
+      notifyListeners();
+      return false;
+    }
+
+    if (clean == _userName) {
+      _status = '用戶名稱沒有變更。';
+      notifyListeners();
+      return false;
+    }
+
+    _userName = clean;
+    _status = '用戶名稱已更新：$_userName';
+    notifyListeners();
+    unawaited(_saveUserName(_userName));
+
+    if (_isRunning) {
+      _announcePresenceBurst();
+      if (_myLocation != null) {
+        unawaited(_sendPacketToNetwork(_locationPacket()));
+      }
+    }
+    return true;
+  }
+
   void setActiveRoom(String roomId) {
     if (!_rooms.containsKey(roomId) || roomId == _activeRoomId) {
       return;
@@ -11373,7 +11668,11 @@ class MeshChatService extends ChangeNotifier {
     _status = '已建立光團：${room.name}';
     notifyListeners();
 
-    final packet = room.toPacket(senderId: _nodeId, senderName: _displayName);
+    final packet = room.toPacket(
+      senderId: _nodeId,
+      senderName: _displayName,
+      senderUserName: _userName,
+    );
     unawaited(_sendLocalPacket(packet));
     return true;
   }
@@ -11406,7 +11705,7 @@ class MeshChatService extends ChangeNotifier {
       quantity: quantity.trim(),
       note: note.trim(),
       offeredById: _nodeId,
-      offeredByName: _displayName,
+      offeredByName: identityName,
       createdAt: now,
       updatedAt: now,
       status: MeshSupply.availableStatus,
@@ -11462,7 +11761,7 @@ class MeshChatService extends ChangeNotifier {
     final targetName = _peers[userId]?.name ?? '光點';
     final vote = MeshCreditVote(
       voterId: _nodeId,
-      voterName: _displayName,
+      voterName: identityName,
       targetId: userId,
       targetName: targetName,
       createdAt: DateTime.now(),
@@ -11667,7 +11966,9 @@ class MeshChatService extends ChangeNotifier {
       roomId: room.id,
       roomName: room.name,
       senderId: _nodeId,
-      senderName: _displayName,
+      senderName: identityName,
+      senderDisplayName: _displayName,
+      senderUserName: _userName,
       text: clean,
       sentAt: sentAt,
       isMine: true,
@@ -11790,7 +12091,11 @@ class MeshChatService extends ChangeNotifier {
     }
 
     final peerPort = _intValue(packet['tcpPort']) ?? tcpPort;
-    final peerName = _stringValue(packet['name']) ?? '光點';
+    final peerDisplayName = _stringValue(packet['name']) ?? '光點';
+    final peerName = _identityName(
+      userName: _packetUserName(packet),
+      displayName: peerDisplayName,
+    );
     var removed = false;
     _peers.removeWhere((id, peer) {
       final shouldRemove =
@@ -11826,12 +12131,19 @@ class MeshChatService extends ChangeNotifier {
       return;
     }
 
-    final peerName = _stringValue(packet['name']) ?? '未命名節點';
+    final peerDisplayName = _stringValue(packet['name']) ?? '未命名節點';
+    final peerUserName = _packetUserName(packet);
+    final peerName = _identityName(
+      userName: peerUserName,
+      displayName: peerDisplayName,
+    );
     final peerPort = _intValue(packet['tcpPort']) ?? tcpPort;
     final sosActive = _optionalBoolValue(packet['sosActive']);
     _rememberPeer(
       id: peerId,
       name: peerName,
+      displayName: peerDisplayName,
+      userName: peerUserName,
       host: remoteHost,
       port: peerPort,
       sosActive: sosActive,
@@ -11842,6 +12154,8 @@ class MeshChatService extends ChangeNotifier {
     _rememberLocationFromMap(
       id: peerId,
       name: peerName,
+      displayName: peerDisplayName,
+      userName: peerUserName,
       value: packet['location'],
       isSosActive: sosActive,
     );
@@ -11883,12 +12197,21 @@ class MeshChatService extends ChangeNotifier {
       return;
     }
 
-    final senderName = _stringValue(packet['senderName']);
+    final senderDisplayName = _stringValue(packet['senderName']);
+    final senderUserName = _packetUserName(packet);
+    final senderName = senderDisplayName == null
+        ? null
+        : _identityName(
+            userName: senderUserName,
+            displayName: senderDisplayName,
+          );
     final senderPort = _intValue(packet['tcpPort']) ?? tcpPort;
     if (senderId != null && senderName != null) {
       _rememberPeer(
         id: senderId,
         name: senderName,
+        displayName: senderDisplayName,
+        userName: senderUserName,
         host: remoteHost,
         port: senderPort,
         sosActive: _optionalBoolValue(packet['sosActive']),
@@ -11939,11 +12262,18 @@ class MeshChatService extends ChangeNotifier {
       return;
     }
 
-    final senderName = _stringValue(packet['senderName']) ?? '未知光點';
+    final senderDisplayName = _stringValue(packet['senderName']) ?? '未知光點';
+    final senderUserName = _packetUserName(packet);
+    final senderName = _identityName(
+      userName: senderUserName,
+      displayName: senderDisplayName,
+    );
     final peerPort = _intValue(packet['tcpPort']) ?? tcpPort;
     _rememberPeer(
       id: senderId,
       name: senderName,
+      displayName: senderDisplayName,
+      userName: senderUserName,
       host: remoteHost,
       port: peerPort,
       sosActive: _optionalBoolValue(packet['sosActive']),
@@ -11974,6 +12304,8 @@ class MeshChatService extends ChangeNotifier {
         roomName: roomName,
         senderId: senderId,
         senderName: senderName,
+        senderDisplayName: senderDisplayName,
+        senderUserName: senderUserName ?? '',
         text: text,
         sentAt: sentAt,
         isMine: false,
@@ -12005,10 +12337,15 @@ class MeshChatService extends ChangeNotifier {
     bool fromOnline = false,
   }) {
     final senderId = _stringValue(packet['senderId']);
-    final senderName = _stringValue(packet['senderName']);
-    if (senderId == null || senderId == _nodeId || senderName == null) {
+    final senderDisplayName = _stringValue(packet['senderName']);
+    if (senderId == null || senderId == _nodeId || senderDisplayName == null) {
       return;
     }
+    final senderUserName = _packetUserName(packet);
+    final senderName = _identityName(
+      userName: senderUserName,
+      displayName: senderDisplayName,
+    );
     if (_blockedUserIds.contains(senderId)) {
       return;
     }
@@ -12022,6 +12359,8 @@ class MeshChatService extends ChangeNotifier {
     _rememberPeer(
       id: senderId,
       name: senderName,
+      displayName: senderDisplayName,
+      userName: senderUserName,
       host: remoteHost,
       port: peerPort,
       sosActive: _optionalBoolValue(packet['sosActive']),
@@ -12035,6 +12374,8 @@ class MeshChatService extends ChangeNotifier {
     _peerLocations[senderId] = RadarContact(
       id: senderId,
       name: senderName,
+      displayName: senderDisplayName,
+      userName: senderUserName ?? '',
       location: location,
       isMe: false,
       isSosActive: sosActive,
@@ -12201,6 +12542,7 @@ class MeshChatService extends ChangeNotifier {
       'app': _appName,
       'nodeId': _nodeId,
       'name': _displayName,
+      'userName': _userName,
       'tcpPort': tcpPort,
       if (reply) 'helloReply': true,
       'sosActive': _sosActive,
@@ -12226,6 +12568,7 @@ class MeshChatService extends ChangeNotifier {
       'app': _appName,
       'nodeId': _nodeId,
       'name': _displayName,
+      'userName': _userName,
       'tcpPort': tcpPort,
       'sosActive': false,
       'sentAt': DateTime.now().toUtc().toIso8601String(),
@@ -12240,6 +12583,7 @@ class MeshChatService extends ChangeNotifier {
       'app': _appName,
       'senderId': _nodeId,
       'senderName': _displayName,
+      'senderUserName': _userName,
       'tcpPort': tcpPort,
       'sosActive': _sosActive,
       'hops': hops,
@@ -12438,7 +12782,12 @@ class MeshChatService extends ChangeNotifier {
       await _sendJson(
         host,
         port,
-        room.toPacket(senderId: _nodeId, senderName: _displayName, hops: 1),
+        room.toPacket(
+          senderId: _nodeId,
+          senderName: _displayName,
+          senderUserName: _userName,
+          hops: 1,
+        ),
       );
     }
 
@@ -12469,7 +12818,12 @@ class MeshChatService extends ChangeNotifier {
 
     for (final room in rooms) {
       await _sendPacketToOnline(
-        room.toPacket(senderId: _nodeId, senderName: _displayName, hops: 1),
+        room.toPacket(
+          senderId: _nodeId,
+          senderName: _displayName,
+          senderUserName: _userName,
+          hops: 1,
+        ),
       );
     }
 
@@ -12496,6 +12850,8 @@ class MeshChatService extends ChangeNotifier {
   void _rememberPeer({
     required String id,
     required String name,
+    String? displayName,
+    String? userName,
     required String host,
     required int port,
     bool? sosActive,
@@ -12509,15 +12865,24 @@ class MeshChatService extends ChangeNotifier {
       return;
     }
 
+    final cleanDisplayName = (displayName ?? name).trim().isEmpty
+        ? '光點'
+        : (displayName ?? name).trim();
+    final cleanUserName = _cleanOptionalUserName(userName);
+    final label = _identityName(
+      userName: cleanUserName,
+      displayName: cleanDisplayName,
+    );
+
     if (_networkMode == MeshNetworkMode.online) {
-      if (_sameDisplayName(name, _displayName)) {
+      if (_sameDisplayName(cleanDisplayName, _displayName)) {
         _removePeerById(id);
         if (notify) {
           notifyListeners();
         }
         return;
       }
-      _removeOnlinePeersWithSameName(id: id, name: name);
+      _removeOnlinePeersWithSameName(id: id, name: cleanDisplayName);
     } else {
       _removePeersFromSameEndpoint(id: id, host: host, port: port);
     }
@@ -12526,7 +12891,9 @@ class MeshChatService extends ChangeNotifier {
     if (existing == null) {
       _peers[id] = MeshPeer(
         id: id,
-        name: name,
+        name: label,
+        displayName: cleanDisplayName,
+        userName: cleanUserName ?? '',
         host: host,
         port: port,
         sosActive: sosActive ?? false,
@@ -12534,21 +12901,29 @@ class MeshChatService extends ChangeNotifier {
       );
     } else {
       existing
-        ..name = name
+        ..name = label
+        ..displayName = cleanDisplayName
+        ..userName = cleanUserName ?? ''
         ..host = host
         ..port = port
         ..sosActive = sosActive ?? existing.sosActive
         ..lastSeen = DateTime.now();
     }
-    if (sosActive != null) {
-      final existingContact = _peerLocations[id];
-      if (existingContact != null && existingContact.isSosActive != sosActive) {
+    final existingContact = _peerLocations[id];
+    if (existingContact != null) {
+      final nextSosActive = sosActive ?? existingContact.isSosActive;
+      if (existingContact.isSosActive != nextSosActive ||
+          existingContact.name != label ||
+          existingContact.displayName != cleanDisplayName ||
+          existingContact.userName != (cleanUserName ?? '')) {
         _peerLocations[id] = RadarContact(
           id: existingContact.id,
-          name: name,
+          name: label,
+          displayName: cleanDisplayName,
+          userName: cleanUserName ?? '',
           location: existingContact.location,
           isMe: existingContact.isMe,
-          isSosActive: sosActive,
+          isSosActive: nextSosActive,
           lastSeen: existingContact.lastSeen,
         );
       }
@@ -12576,7 +12951,8 @@ class MeshChatService extends ChangeNotifier {
     final stalePeerIds = _peers.entries
         .where(
           (entry) =>
-              entry.key != id && _sameDisplayName(entry.value.name, name),
+              entry.key != id &&
+              _sameDisplayName(entry.value.displayName, name),
         )
         .map((entry) => entry.key)
         .toList();
@@ -12708,6 +13084,8 @@ class MeshChatService extends ChangeNotifier {
   void _rememberLocationFromMap({
     required String id,
     required String name,
+    String? displayName,
+    String? userName,
     required Object? value,
     bool? isSosActive,
   }) {
@@ -12721,15 +13099,28 @@ class MeshChatService extends ChangeNotifier {
     }
     final existingContact = _peerLocations[id];
     final nextSosActive = isSosActive ?? existingContact?.isSosActive ?? false;
+    final cleanDisplayName = (displayName ?? name).trim().isEmpty
+        ? '光點'
+        : (displayName ?? name).trim();
+    final cleanUserName = _cleanOptionalUserName(userName);
+    final label = _identityName(
+      userName: cleanUserName,
+      displayName: cleanDisplayName,
+    );
     if (existingContact != null &&
         !_shouldReplaceLocation(existingContact.location, location) &&
-        existingContact.isSosActive == nextSosActive) {
+        existingContact.isSosActive == nextSosActive &&
+        existingContact.name == label &&
+        existingContact.displayName == cleanDisplayName &&
+        existingContact.userName == (cleanUserName ?? '')) {
       return;
     }
 
     _peerLocations[id] = RadarContact(
       id: id,
-      name: name,
+      name: label,
+      displayName: cleanDisplayName,
+      userName: cleanUserName ?? '',
       location: location,
       isMe: false,
       isSosActive: nextSosActive,
@@ -13007,6 +13398,50 @@ class MeshChatService extends ChangeNotifier {
     return null;
   }
 
+  static String _identityName({required String displayName, String? userName}) {
+    final cleanDisplayName = displayName.trim().isEmpty
+        ? '光點'
+        : displayName.trim();
+    final cleanUserName = _cleanOptionalUserName(userName);
+    if (cleanUserName == null || cleanUserName == cleanDisplayName) {
+      return cleanDisplayName;
+    }
+    return '$cleanUserName · $cleanDisplayName';
+  }
+
+  static String? _packetUserName(Map<String, dynamic> packet) {
+    return _cleanOptionalUserName(
+      _stringValue(packet['senderUserName']) ??
+          _stringValue(packet['userName']),
+    );
+  }
+
+  static String _savedUserNameOrDefault(String? value) {
+    final clean = _cleanOptionalUserName(value);
+    if (clean == null) {
+      return _defaultUserName;
+    }
+    return MeshContentModeration.check(clean).allowed
+        ? clean
+        : _defaultUserName;
+  }
+
+  static String _cleanUserName(String value) {
+    final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (clean.runes.length <= _maxUserNameLength) {
+      return clean;
+    }
+    return String.fromCharCodes(clean.runes.take(_maxUserNameLength));
+  }
+
+  static String? _cleanOptionalUserName(String? value) {
+    if (value == null) {
+      return null;
+    }
+    final clean = _cleanUserName(value);
+    return clean.isEmpty ? null : clean;
+  }
+
   static int? _intValue(Object? value) {
     if (value is int) {
       return value;
@@ -13096,6 +13531,8 @@ class MeshOnlineUser {
   const MeshOnlineUser({
     required this.id,
     required this.name,
+    this.displayName = '',
+    this.userName = '',
     required this.isMe,
     required this.lastSeen,
     required this.creditScore,
@@ -13105,6 +13542,8 @@ class MeshOnlineUser {
 
   final String id;
   final String name;
+  final String displayName;
+  final String userName;
   final bool isMe;
   final DateTime lastSeen;
   final int creditScore;
@@ -13351,6 +13790,7 @@ class MeshRoom {
   Map<String, Object?> toPacket({
     required String senderId,
     required String senderName,
+    String? senderUserName,
     int hops = 0,
   }) {
     return <String, Object?>{
@@ -13358,6 +13798,8 @@ class MeshRoom {
       'app': MeshChatService._appName,
       'senderId': senderId,
       'senderName': senderName,
+      if ((senderUserName ?? '').trim().isNotEmpty)
+        'senderUserName': senderUserName!.trim(),
       'tcpPort': MeshChatService.tcpPort,
       'hops': hops,
       ...toMap(),
@@ -13369,6 +13811,8 @@ class MeshPeer {
   MeshPeer({
     required this.id,
     required this.name,
+    required this.displayName,
+    required this.userName,
     required this.host,
     required this.port,
     required this.sosActive,
@@ -13377,6 +13821,8 @@ class MeshPeer {
 
   final String id;
   String name;
+  String displayName;
+  String userName;
   String host;
   int port;
   bool sosActive;
@@ -13392,6 +13838,8 @@ class MeshMessage {
     required this.roomName,
     required this.senderId,
     required this.senderName,
+    this.senderDisplayName = '',
+    this.senderUserName = '',
     required this.text,
     required this.sentAt,
     required this.isMine,
@@ -13402,11 +13850,17 @@ class MeshMessage {
   final String roomName;
   final String senderId;
   final String senderName;
+  final String senderDisplayName;
+  final String senderUserName;
   final String text;
   final DateTime sentAt;
   final bool isMine;
 
   Map<String, Object?> toPacket({int hops = 0}) {
+    final lightPointName = senderDisplayName.trim().isEmpty
+        ? senderName
+        : senderDisplayName.trim();
+    final cleanUserName = senderUserName.trim();
     return <String, Object?>{
       'kind': MeshChatService._chatKind,
       'app': MeshChatService._appName,
@@ -13414,7 +13868,8 @@ class MeshMessage {
       'roomId': roomId,
       'roomName': roomName,
       'senderId': senderId,
-      'senderName': senderName,
+      'senderName': lightPointName,
+      if (cleanUserName.isNotEmpty) 'senderUserName': cleanUserName,
       'tcpPort': MeshChatService.tcpPort,
       'text': text,
       'sentAt': sentAt.toUtc().toIso8601String(),
