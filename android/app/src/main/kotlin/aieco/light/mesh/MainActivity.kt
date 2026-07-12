@@ -158,6 +158,8 @@ private class WifiMeshBridge(private val activity: Activity) {
     private var preferBluetoothNetwork = false
     private var transportMode = TRANSPORT_WIFI
     private var pendingLocationResult: MethodChannel.Result? = null
+    private var pendingLocationLowPower = false
+    private var pendingLocationMaxCacheAgeMillis = 120_000L
     private var torchCameraId: String? = null
 
     private val receiver =
@@ -295,7 +297,11 @@ private class WifiMeshBridge(private val activity: Activity) {
         pendingLocationResult = null
 
         if (hasLocationPermission()) {
-            currentLocation(result)
+            currentLocation(
+                result,
+                pendingLocationLowPower,
+                pendingLocationMaxCacheAgeMillis
+            )
         } else {
             result.error(
                 "permission_missing",
@@ -435,6 +441,14 @@ private class WifiMeshBridge(private val activity: Activity) {
     fun handle(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "capabilities" -> result.success(capabilities())
+            "requestNotificationPermission" -> requestNotificationPermission(result)
+            "startBackgroundMeshService" -> startBackgroundMeshService(result)
+            "stopBackgroundMeshService" -> stopBackgroundMeshService(result)
+            "showChatNotification" -> showChatNotification(call, result)
+            "clearChatNotifications" -> {
+                MeshNotifications.clearChatNotifications(appContext)
+                result.success(true)
+            }
             "requestPermissions" -> {
                 requestRuntimePermissions()
                 armWifiDirectInviteReceiver()
@@ -492,7 +506,7 @@ private class WifiMeshBridge(private val activity: Activity) {
                 stopLocalOnlyHotspot()
                 result.success(status())
             }
-            "currentLocation" -> currentLocation(result)
+            "currentLocation" -> currentLocation(call, result)
             "status" -> {
                 refreshP2pSnapshot {
                     result.success(status())
@@ -500,6 +514,61 @@ private class WifiMeshBridge(private val activity: Activity) {
             }
             else -> result.notImplemented()
         }
+    }
+
+    private fun requestNotificationPermission(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+        ) {
+            activity.requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                PERMISSION_REQUEST_CODE
+            )
+        }
+        result.success(permissionSnapshot())
+    }
+
+    private fun startBackgroundMeshService(result: MethodChannel.Result) {
+        val intent = Intent(appContext, MeshBackgroundService::class.java)
+        val started = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appContext.startForegroundService(intent)
+            } else {
+                appContext.startService(intent)
+            }
+        }.isSuccess
+
+        if (started) {
+            result.success(true)
+        } else {
+            result.error(
+                "background_service_failed",
+                "未能啟動背景光之網絡服務。",
+                null
+            )
+        }
+    }
+
+    private fun stopBackgroundMeshService(result: MethodChannel.Result) {
+        val stopped = appContext.stopService(
+            Intent(appContext, MeshBackgroundService::class.java)
+        )
+        result.success(stopped)
+    }
+
+    private fun showChatNotification(call: MethodCall, result: MethodChannel.Result) {
+        val args = call.arguments as? Map<*, *>
+        val roomName = (args?.get("title") as? String)?.trim().orEmpty()
+        val senderName = (args?.get("senderName") as? String)?.trim().orEmpty()
+        val body = (args?.get("body") as? String)?.trim().orEmpty()
+        if (body.isEmpty()) {
+            result.success(false)
+            return
+        }
+
+        val title = if (roomName.isEmpty()) "傳播光新留言" else roomName
+        val text = if (senderName.isEmpty()) body else "$senderName：$body"
+        result.success(MeshNotifications.showChatNotification(appContext, title, text))
     }
 
     private fun openExternalUrl(url: String?, result: MethodChannel.Result) {
@@ -875,6 +944,7 @@ private class WifiMeshBridge(private val activity: Activity) {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions += Manifest.permission.NEARBY_WIFI_DEVICES
+            permissions += Manifest.permission.POST_NOTIFICATIONS
         } else {
             permissions += Manifest.permission.ACCESS_FINE_LOCATION
         }
@@ -904,8 +974,21 @@ private class WifiMeshBridge(private val activity: Activity) {
         return false
     }
 
+    private fun currentLocation(call: MethodCall, result: MethodChannel.Result) {
+        val args = call.arguments as? Map<*, *>
+        val lowPower = args?.get("lowPower") == true
+        val maxCacheAgeMillis =
+            ((args?.get("maxCacheAgeMillis") as? Number)?.toLong() ?: 120_000L)
+                .coerceIn(0L, 900_000L)
+        currentLocation(result, lowPower, maxCacheAgeMillis)
+    }
+
     @SuppressLint("MissingPermission")
-    private fun currentLocation(result: MethodChannel.Result) {
+    private fun currentLocation(
+        result: MethodChannel.Result,
+        lowPower: Boolean = false,
+        maxCacheAgeMillis: Long = 120_000L
+    ) {
         if (!hasLocationPermission()) {
             if (pendingLocationResult != null) {
                 result.error(
@@ -917,6 +1000,8 @@ private class WifiMeshBridge(private val activity: Activity) {
             }
 
             pendingLocationResult = result
+            pendingLocationLowPower = lowPower
+            pendingLocationMaxCacheAgeMillis = maxCacheAgeMillis
             if (requestRuntimePermissions()) {
                 return
             }
@@ -932,12 +1017,20 @@ private class WifiMeshBridge(private val activity: Activity) {
 
         val cached = bestLastKnownLocation()
         val now = System.currentTimeMillis()
-        if (cached != null && cached.time > 0 && now - cached.time < 120_000L) {
+        if (cached != null &&
+            maxCacheAgeMillis > 0L &&
+            cached.time > 0 &&
+            now - cached.time < maxCacheAgeMillis
+        ) {
             result.success(cached.toLocationMap(fromCache = true, message = "已使用最近定位"))
             return
         }
 
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        val providers = (if (lowPower) {
+            listOf(LocationManager.NETWORK_PROVIDER)
+        } else {
+            listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)
+        })
             .filter { provider ->
                 runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false)
             }
@@ -997,8 +1090,8 @@ private class WifiMeshBridge(private val activity: Activity) {
             val ok = runCatching {
                 locationManager.requestLocationUpdates(
                     provider,
-                    0L,
-                    0f,
+                    if (lowPower) 30_000L else 0L,
+                    if (lowPower) 25f else 0f,
                     activeListener,
                     Looper.getMainLooper()
                 )
@@ -1025,7 +1118,7 @@ private class WifiMeshBridge(private val activity: Activity) {
             } else {
                 finishWithError("location_timeout", "定位逾時，請到室外或開啟更準確定位。")
             }
-        }, 8000L)
+        }, if (lowPower) 4500L else 8000L)
     }
 
     @SuppressLint("MissingPermission")

@@ -28,7 +28,12 @@ const String _onlineRelayUrl = String.fromEnvironment('AIECO_ONLINE_RELAY_URL');
 const Duration _launchScreenDuration = Duration(milliseconds: 900);
 const double _nearbyRadarMeters = 5;
 const String _nearbyRadarLabel = '5 米內';
-const Duration _radarTrackingInterval = Duration(seconds: 12);
+const Duration _radarActiveTrackingInterval = Duration(seconds: 45);
+const Duration _radarPassiveTrackingInterval = Duration(minutes: 2);
+const Duration _radarBackgroundTrackingInterval = Duration(minutes: 5);
+const Duration _radarActiveLocationCacheMaxAge = Duration(minutes: 2);
+const Duration _radarPassiveLocationCacheMaxAge = Duration(minutes: 5);
+const Duration _radarBackgroundLocationCacheMaxAge = Duration(minutes: 10);
 const double _radarLocationUpdateThresholdMeters = 8;
 const double _radarAccuracyUpdateThresholdMeters = 20;
 const Duration _wirelessStatusInterval = Duration(seconds: 6);
@@ -66,6 +71,104 @@ class _ExternalUrlLauncher {
     } on PlatformException {
       return false;
     }
+  }
+}
+
+class _BackgroundMeshController {
+  static const MethodChannel _channel = MethodChannel(
+    'hk.aieco.propagation_light/wifi_mesh',
+  );
+  static const int _previewMaxLength = 96;
+  static const Duration _failedServiceRetryDelay = Duration(minutes: 1);
+
+  bool _serviceEnabled = false;
+  bool _notificationPermissionRequested = false;
+  DateTime? _lastServiceErrorAt;
+
+  Future<void> requestNotificationPermission() async {
+    if (_notificationPermissionRequested ||
+        (!Platform.isAndroid && !Platform.isIOS)) {
+      return;
+    }
+
+    _notificationPermissionRequested = true;
+    try {
+      await _channel.invokeMethod<Object?>('requestNotificationPermission');
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
+
+  Future<void> syncService({required bool enabled}) async {
+    if (!Platform.isAndroid || _serviceEnabled == enabled) {
+      return;
+    }
+
+    final lastErrorAt = _lastServiceErrorAt;
+    if (enabled &&
+        lastErrorAt != null &&
+        DateTime.now().difference(lastErrorAt) < _failedServiceRetryDelay) {
+      return;
+    }
+
+    try {
+      await _channel.invokeMethod<Object?>(
+        enabled ? 'startBackgroundMeshService' : 'stopBackgroundMeshService',
+      );
+      _serviceEnabled = enabled;
+      _lastServiceErrorAt = null;
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      if (enabled) {
+        _lastServiceErrorAt = DateTime.now();
+      } else {
+        _serviceEnabled = false;
+      }
+    }
+  }
+
+  Future<void> showChatNotification(MeshMessage message) async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return;
+    }
+
+    try {
+      await _channel
+          .invokeMethod<Object?>('showChatNotification', <String, Object?>{
+            'title': message.roomName,
+            'senderName': message.senderName,
+            'body': _preview(message.text),
+          });
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
+
+  Future<void> clearChatNotifications() async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return;
+    }
+
+    try {
+      await _channel.invokeMethod<Object?>('clearChatNotifications');
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
+
+  static String _preview(String value) {
+    final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (clean.length <= _previewMaxLength) {
+      return clean;
+    }
+    return '${clean.substring(0, _previewMaxLength)}...';
   }
 }
 
@@ -239,11 +342,15 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   late final LightRadarController _radar;
   late final TabController _tabController;
   final _sosLight = _SosLightController();
+  final _backgroundMesh = _BackgroundMeshController();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _messagesScrollController = ScrollController();
   Timer? _radarTrackingTimer;
   Timer? _wirelessStatusTimer;
   Timer? _wifiGroupTimer;
+  Duration? _activeRadarTrackingInterval;
+  DateTime? _lastRadarLocationRefreshAt;
+  AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
   bool _radarTrackingBusy = false;
   bool _wirelessStatusBusy = false;
   bool _localNetworkPreferenceBusy = false;
@@ -253,6 +360,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   String? _lastWirelessStatusSignature;
   String? _lastP2pOwnerSyncEndpoint;
   DateTime? _lastP2pOwnerSyncAt;
+  int _lastNotifiedIncomingMessageVersion = 0;
 
   @override
   void initState() {
@@ -283,6 +391,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
         return;
       }
       await _syncLocalNetworkPreference();
+      unawaited(_backgroundMesh.requestNotificationPermission());
       if (Platform.isIOS) {
         _scheduleAutomaticRadarLocation();
         _scheduleStartupPermissionsRequest(delay: const Duration(seconds: 3));
@@ -304,6 +413,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     _mesh.dispose();
     _wifiMesh.dispose();
     _radar.dispose();
+    unawaited(_backgroundMesh.syncService(enabled: false));
     _sosLight.removeListener(_handleSosLightChange);
     _sosLight.dispose();
     _tabController.removeListener(_handleTabChange);
@@ -318,9 +428,14 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appLifecycleState = state;
+    _restartRadarTrackingIfActive();
+    unawaited(_syncBackgroundMeshState());
+
     if (state == AppLifecycleState.resumed && widget.autoStart) {
+      unawaited(_backgroundMesh.clearChatNotifications());
       unawaited(_refreshWirelessStatusAndRejoin(forceRejoin: true));
-      unawaited(_locateRadar());
+      unawaited(_locateRadar(force: true));
     }
   }
 
@@ -331,8 +446,9 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     }
 
     _mesh.setSosActive(active);
+    _restartRadarTrackingIfActive();
     if (active) {
-      unawaited(_locateRadar());
+      unawaited(_locateRadar(force: true));
     }
   }
 
@@ -340,6 +456,8 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     if (!widget.autoStart) {
       return;
     }
+    _maybeNotifyIncomingMessage();
+    unawaited(_syncBackgroundMeshState());
     unawaited(_syncLocalNetworkPreference());
   }
 
@@ -348,8 +466,37 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       return;
     }
     if (_tabController.index == 2) {
-      unawaited(_locateRadar());
+      _restartRadarTrackingIfActive();
+      unawaited(_locateRadar(force: true));
     }
+  }
+
+  bool get _appInForeground => _appLifecycleState == AppLifecycleState.resumed;
+
+  bool get _radarNeedsActiveLocation =>
+      _appInForeground && (_tabController.index == 2 || _sosLight.active);
+
+  void _maybeNotifyIncomingMessage() {
+    final version = _mesh.incomingMessageVersion;
+    if (version == 0 || version == _lastNotifiedIncomingMessageVersion) {
+      return;
+    }
+
+    _lastNotifiedIncomingMessageVersion = version;
+    if (_appInForeground) {
+      return;
+    }
+
+    final message = _mesh.lastIncomingMessage;
+    if (message != null) {
+      unawaited(_backgroundMesh.showChatNotification(message));
+    }
+  }
+
+  Future<void> _syncBackgroundMeshState() {
+    return _backgroundMesh.syncService(
+      enabled: widget.autoStart && _mesh.isRunning,
+    );
   }
 
   Future<bool> _ensureEulaAccepted() async {
@@ -1047,33 +1194,84 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     });
   }
 
-  Future<void> _locateRadar() async {
-    final location = await _refreshRadarLocation();
+  Future<void> _locateRadar({bool force = false}) async {
+    final location = await _refreshRadarLocation(force: force);
     if (location != null) {
       _startRadarTracking();
     }
   }
 
   void _startRadarTracking() {
-    if (_radarTrackingTimer != null) {
+    final interval = _radarTrackingIntervalForState;
+    if (_radarTrackingTimer != null &&
+        _activeRadarTrackingInterval == interval) {
       return;
     }
 
-    _radarTrackingTimer = Timer.periodic(_radarTrackingInterval, (_) {
+    _radarTrackingTimer?.cancel();
+    _activeRadarTrackingInterval = interval;
+    _radarTrackingTimer = Timer.periodic(interval, (_) {
       if (mounted) {
         unawaited(_refreshRadarLocation(quiet: true));
       }
     });
   }
 
-  Future<DeviceLocation?> _refreshRadarLocation({bool quiet = false}) async {
+  void _restartRadarTrackingIfActive() {
+    if (_radarTrackingTimer == null) {
+      return;
+    }
+    _startRadarTracking();
+  }
+
+  Duration get _radarTrackingIntervalForState {
+    if (!_appInForeground) {
+      return _radarBackgroundTrackingInterval;
+    }
+    if (_radarNeedsActiveLocation) {
+      return _radarActiveTrackingInterval;
+    }
+    return _radarPassiveTrackingInterval;
+  }
+
+  Duration get _radarLocationCacheMaxAgeForState {
+    if (!_appInForeground) {
+      return _radarBackgroundLocationCacheMaxAge;
+    }
+    if (_radarNeedsActiveLocation) {
+      return _radarActiveLocationCacheMaxAge;
+    }
+    return _radarPassiveLocationCacheMaxAge;
+  }
+
+  Future<DeviceLocation?> _refreshRadarLocation({
+    bool quiet = false,
+    bool force = false,
+  }) async {
     if (_radarTrackingBusy) {
       return null;
     }
 
+    final now = DateTime.now();
+    final lastRefreshAt = _lastRadarLocationRefreshAt;
+    if (!force &&
+        lastRefreshAt != null &&
+        now.difference(lastRefreshAt) <
+            Duration(
+              microseconds: _radarTrackingIntervalForState.inMicroseconds ~/ 2,
+            )) {
+      return _mesh.myLocation;
+    }
+
     _radarTrackingBusy = true;
+    _lastRadarLocationRefreshAt = now;
     try {
-      final location = await _radar.locate(_mesh.identityName, quiet: quiet);
+      final location = await _radar.locate(
+        _mesh.identityName,
+        quiet: quiet,
+        lowPower: quiet && !_radarNeedsActiveLocation,
+        maxCacheAge: force ? Duration.zero : _radarLocationCacheMaxAgeForState,
+      );
       if (location != null &&
           _shouldReplaceLocation(_mesh.myLocation, location)) {
         _mesh.updateLocation(location);
@@ -1137,8 +1335,10 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     if (wasRunning) {
       await _mesh.stop();
     } else {
+      unawaited(_backgroundMesh.requestNotificationPermission());
       await _mesh.start();
     }
+    unawaited(_syncBackgroundMeshState());
 
     if (!mounted) {
       return;
@@ -1294,7 +1494,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                   mesh: _mesh,
                   radar: _radar,
                   enableWebView: widget.enableWebView,
-                  onLocate: () => unawaited(_locateRadar()),
+                  onLocate: () => unawaited(_locateRadar(force: true)),
                   onQuoteContactName: _quoteContactNameForChat,
                   onEditUserName: () => unawaited(_editUserName()),
                 );
@@ -10087,6 +10287,8 @@ class LightRadarController extends ChangeNotifier {
   Future<DeviceLocation?> locate(
     String displayName, {
     bool quiet = false,
+    bool lowPower = false,
+    Duration maxCacheAge = _radarActiveLocationCacheMaxAge,
   }) async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       _message = '定位功能目前只在支援的原生端開放。';
@@ -10103,10 +10305,12 @@ class LightRadarController extends ChangeNotifier {
     var changed = false;
 
     try {
-      final result = await _channel.invokeMethod<Object?>(
-        'currentLocation',
-        <String, Object?>{'displayName': displayName},
-      );
+      final result = await _channel
+          .invokeMethod<Object?>('currentLocation', <String, Object?>{
+            'displayName': displayName,
+            'lowPower': lowPower,
+            'maxCacheAgeMillis': maxCacheAge.inMilliseconds,
+          });
       if (result is Map) {
         final map = Map<String, Object?>.from(result);
         final nextLocation = DeviceLocation.fromMap(map);
@@ -10741,6 +10945,8 @@ class MeshChatService extends ChangeNotifier {
   List<String> _localAddresses = <String>[];
   List<String> _localBroadcastAddresses = <String>[];
   DateTime? _eulaAcceptedAt;
+  MeshMessage? _lastIncomingMessage;
+  int _incomingMessageVersion = 0;
 
   bool get isRunning => _isRunning;
   MeshNetworkMode get networkMode => _networkMode;
@@ -10758,6 +10964,8 @@ class MeshChatService extends ChangeNotifier {
   bool get sosActive => _sosActive;
   bool get eulaAccepted => _eulaAcceptedAt != null;
   DateTime? get eulaAcceptedAt => _eulaAcceptedAt;
+  MeshMessage? get lastIncomingMessage => _lastIncomingMessage;
+  int get incomingMessageVersion => _incomingMessageVersion;
   int get moderationReportCount => _moderationReports.length;
   Set<String> get blockedUserIds => Set<String>.unmodifiable(_blockedUserIds);
   List<MeshBlockedUser> get blockedUsers {
@@ -11132,6 +11340,8 @@ class MeshChatService extends ChangeNotifier {
     _supplies.clear();
     _creditVotes.clear();
     _messages.clear();
+    _lastIncomingMessage = null;
+    _incomingMessageVersion = 0;
     _seenMessageIds
       ..clear()
       ..add(_nodeId);
@@ -12297,20 +12507,21 @@ class MeshChatService extends ChangeNotifier {
       ),
     );
 
-    _messages.add(
-      MeshMessage(
-        id: messageId,
-        roomId: roomId,
-        roomName: roomName,
-        senderId: senderId,
-        senderName: senderName,
-        senderDisplayName: senderDisplayName,
-        senderUserName: senderUserName ?? '',
-        text: text,
-        sentAt: sentAt,
-        isMine: false,
-      ),
+    final message = MeshMessage(
+      id: messageId,
+      roomId: roomId,
+      roomName: roomName,
+      senderId: senderId,
+      senderName: senderName,
+      senderDisplayName: senderDisplayName,
+      senderUserName: senderUserName ?? '',
+      text: text,
+      sentAt: sentAt,
+      isMine: false,
     );
+    _messages.add(message);
+    _lastIncomingMessage = message;
+    _incomingMessageVersion += 1;
     _trimMessages();
     _status = '收到 $senderName 在 $roomName 的訊息，正在傳播。';
     notifyListeners();

@@ -36,6 +36,11 @@
 	<string>傳播光只會使用相機閃光燈發出 SOS 求救燈號，不會拍照或錄影。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>傳播光需要在你使用 App 時取得位置，在光之雷達顯示你的光點並與附近用戶分享大約位置。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

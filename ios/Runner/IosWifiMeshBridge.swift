@@ -4,6 +4,7 @@ import CoreLocation
 import Darwin
 import Network
 import UIKit
+import UserNotifications
 
 final class IosWifiMeshBridge: NSObject {
   private static let channelName = "hk.aieco.propagation_light/wifi_mesh"
@@ -28,6 +29,8 @@ final class IosWifiMeshBridge: NSObject {
   private var lastLocation: CLLocation?
   private var locationRequestInFlight = false
   private var waitingForLocationAuthorization = false
+  private var pendingLocationLowPower = false
+  private var pendingLocationMaxCacheAge: TimeInterval = 120
   private var wifiAvailable = false
   private var transportMode = IosWifiMeshBridge.transportWifi
   private var networkGeneration = 0
@@ -49,10 +52,32 @@ final class IosWifiMeshBridge: NSObject {
     startPathMonitoring()
   }
 
+  func performBackgroundRefresh(completion: @escaping (UIBackgroundFetchResult) -> Void) {
+    startLocalService()
+    startBrowsing()
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+      guard let strongSelf = self else {
+        completion(.failed)
+        return
+      }
+
+      completion(strongSelf.currentPeers().isEmpty ? .noData : .newData)
+    }
+  }
+
   private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "capabilities":
       result(capabilities())
+    case "requestNotificationPermission":
+      requestNotificationPermission(result: result)
+    case "startBackgroundMeshService", "stopBackgroundMeshService":
+      result(true)
+    case "showChatNotification":
+      showChatNotification(from: call.arguments, result: result)
+    case "clearChatNotifications":
+      clearChatNotifications(result: result)
     case "requestPermissions", "discoverPeers", "discoverAppPeers":
       startLocalService()
       startBrowsing()
@@ -85,7 +110,7 @@ final class IosWifiMeshBridge: NSObject {
     case "setTorch":
       setTorch(from: call.arguments, result: result)
     case "currentLocation":
-      currentLocation(result: result)
+      currentLocation(from: call.arguments, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -107,6 +132,93 @@ final class IosWifiMeshBridge: NSObject {
         "missing": []
       ]
     ]
+  }
+
+  private func requestNotificationPermission(result: @escaping FlutterResult) {
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) {
+      granted, error in
+      DispatchQueue.main.async {
+        if let error = error {
+          result(FlutterError(
+            code: "notification_permission_failed",
+            message: "未能要求通知權限。",
+            details: error.localizedDescription
+          ))
+          return
+        }
+        result(["granted": granted])
+      }
+    }
+  }
+
+  private func showChatNotification(from arguments: Any?, result: @escaping FlutterResult) {
+    let args = arguments as? [String: Any]
+    let roomName = (args?["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let senderName = (args?["senderName"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let body = (args?["body"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !body.isEmpty else {
+      result(false)
+      return
+    }
+
+    let center = UNUserNotificationCenter.current()
+    center.getNotificationSettings { settings in
+      let deliver = {
+        let content = UNMutableNotificationContent()
+        content.title = roomName.isEmpty ? "傳播光新留言" : roomName
+        content.body = senderName.isEmpty ? body : "\(senderName)：\(body)"
+        content.sound = .default
+        content.threadIdentifier = "aieco-mesh-chat"
+        let request = UNNotificationRequest(
+          identifier: "aieco-mesh-chat-latest",
+          content: content,
+          trigger: nil
+        )
+        center.add(request) { error in
+          DispatchQueue.main.async {
+            if let error = error {
+              result(FlutterError(
+                code: "notification_failed",
+                message: "未能顯示新留言通知。",
+                details: error.localizedDescription
+              ))
+            } else {
+              result(true)
+            }
+          }
+        }
+      }
+
+      switch settings.authorizationStatus {
+      case .authorized, .provisional:
+        deliver()
+      case .notDetermined:
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+          if granted && error == nil {
+            deliver()
+          } else {
+            DispatchQueue.main.async {
+              result(false)
+            }
+          }
+        }
+      case .denied:
+        DispatchQueue.main.async {
+          result(false)
+        }
+      @unknown default:
+        DispatchQueue.main.async {
+          result(false)
+        }
+      }
+    }
+  }
+
+  private func clearChatNotifications(result: @escaping FlutterResult) {
+    let center = UNUserNotificationCenter.current()
+    center.removeDeliveredNotifications(withIdentifiers: ["aieco-mesh-chat-latest"])
+    center.removePendingNotificationRequests(withIdentifiers: ["aieco-mesh-chat-latest"])
+    result(true)
   }
 
   private func setTorch(from arguments: Any?, result: @escaping FlutterResult) {
@@ -200,7 +312,13 @@ final class IosWifiMeshBridge: NSObject {
     return AVCaptureDevice.default(for: .video)?.hasTorch == true
   }
 
-  private func currentLocation(result: @escaping FlutterResult) {
+  private func currentLocation(from arguments: Any?, result: @escaping FlutterResult) {
+    let args = arguments as? [String: Any]
+    pendingLocationLowPower = args?["lowPower"] as? Bool ?? false
+    let rawMaxCacheAgeMillis = args?["maxCacheAgeMillis"] as? NSNumber
+    let maxCacheAgeMillis = rawMaxCacheAgeMillis?.doubleValue ?? 120_000
+    pendingLocationMaxCacheAge = min(max(maxCacheAgeMillis / 1000, 0), 900)
+
     if pendingLocationResult != nil {
       result(FlutterError(
         code: "location_pending",
@@ -238,7 +356,8 @@ final class IosWifiMeshBridge: NSObject {
       return
     }
 
-    if let cached = recentCachedLocation(maxAge: 120) {
+    if pendingLocationMaxCacheAge > 0,
+       let cached = recentCachedLocation(maxAge: pendingLocationMaxCacheAge) {
       finishLocationRequest(
         with: cached,
         fromCache: true,
@@ -265,11 +384,21 @@ final class IosWifiMeshBridge: NSObject {
     }
 
     locationRequestInFlight = true
+    locationManager.desiredAccuracy = pendingLocationLowPower
+      ? kCLLocationAccuracyKilometer
+      : kCLLocationAccuracyHundredMeters
+    locationManager.distanceFilter = pendingLocationLowPower
+      ? 50
+      : kCLDistanceFilterNone
     let timeout = DispatchWorkItem { [weak self] in
       self?.finishLocationTimeout()
     }
     locationTimeoutWorkItem = timeout
-    DispatchQueue.main.asyncAfter(deadline: .now() + 8.0, execute: timeout)
+    let timeoutDelay = pendingLocationLowPower ? 5.0 : 8.0
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + timeoutDelay,
+      execute: timeout
+    )
     locationManager.requestLocation()
   }
 
