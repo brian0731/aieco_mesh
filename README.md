@@ -1,6 +1,6 @@
 # 傳播光 (LightMesh)
 
-傳播光是一個線上 / 離線光之網絡聊天工具。線上模式可透過 WebSocket relay 讓用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，用戶仍可透過同一個 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通的 LAN 進入同一個本地傳播頻道聊天。
+傳播光是一個線上 / 離線光之網絡聊天工具。線上模式可透過 WebSocket relay 讓用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，用戶仍可透過藍芽 Mesh、同一個 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通的 LAN 進入同一個本地傳播頻道聊天。
 
 ## 文件
 
@@ -11,6 +11,7 @@
 
 - 線上光之網絡：透過 `AIECO_ONLINE_RELAY_URL` WebSocket relay 傳送聊天、光團、物資、信用和定位 packet。
 - 離線 LAN mesh chat：UDP 自動發現節點，TCP 傳送訊息。
+- 藍芽 Mesh：Android 可優先使用藍芽網絡共享（Bluetooth PAN）；iOS 可使用系統 peer-to-peer 搜尋附近光點，訊息沿用 app-layer mesh 多 hop 轉發。
 - 多 hop 訊息轉發：收到新訊息後會向其他已知節點再傳播。
 - 光之通道：聊天、光團、在線用家、用戶信用、物資分享、物資已取完狀態。
 - 光之雷達：定位光點，線上 Google Map 或離線香港地圖顯示附近光點。
@@ -25,12 +26,13 @@
 
 ### 光之網絡
 
-光之網絡負責讓光點互相找到對方。線上模式會連接 WebSocket relay，用戶入 APP 即可聊天，不需要接同一個 WiFi。沒有外網時，可切換離線模式，透過同一個 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通的 LAN 進入同一個本地傳播頻道。
+光之網絡負責讓光點互相找到對方。線上模式會連接 WebSocket relay，用戶入 APP 即可聊天，不需要接同一個 WiFi。沒有外網時，可切換離線模式，透過藍芽 Mesh、同一個 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通的 LAN 進入同一個本地傳播頻道。
 
 - 線上光網：同步聊天、光團、物資、信用、定位和 SOS 狀態。
 - 離線 mesh：在 LAN 內自動尋找光點，並以 TCP 傳送訊息。
 - 多 hop 轉發：收到新訊息後會向其他已知節點再傳播。
 - 無線工具：Android 可掃 P2P、開 Wi-Fi Direct group、開本地熱點、掃附近 WiFi；iOS 可掃同一 WiFi 內的 LAN peer。
+- 藍芽模式：Android 偵測並優先使用 Bluetooth PAN 網絡；iOS 透過系統 peer-to-peer 尋找附近 peer。
 - 自動重試：自動發現失敗時，重新掃描同一 WiFi / Wi-Fi Direct / 熱點網絡。
 
 ### 光之通道
@@ -99,6 +101,22 @@ wss://YOUR_RELAY_DOMAIN/ws/light
 2. 確認兩部 iPhone 已連到同一 WiFi。
 3. 按「掃 LAN」或「掃 LAN 並連接」，選到 peer 後會用 TCP mesh 同步。
 4. 在「傳播頻道」輸入訊息。
+
+## 藍芽 Mesh 使用流程
+
+### Android
+
+1. 在「光之網絡」選擇「藍芽」模式，按「權限」允許附近裝置 / 藍芽權限。
+2. 先在系統中配對裝置，再按「藍芽熱點」開啟藍芽網絡共享。
+3. 返回 APP 後按「藍芽刷新」；偵測到 Bluetooth PAN 網絡後，離線聊天會優先經該網絡傳送。
+
+### iOS
+
+1. 確認兩部 iPhone 已開啟藍芽，並允許 APP 使用本地網絡。
+2. 在「光之網絡」選擇「藍芽」模式，再按「藍芽刷新」。
+3. APP 會使用 iOS 系統 peer-to-peer 搜尋附近光點，找到 peer 後即可在「傳播頻道」聊天。
+
+> 注意：這裡的「藍芽 Mesh」是由 APP 在可用的藍芽網絡 / 系統 peer-to-peer 連線上執行訊息發現與多 hop 轉發，不是 Bluetooth SIG 標準的 Bluetooth Mesh Profile。
 
 ## 重要限制
 
