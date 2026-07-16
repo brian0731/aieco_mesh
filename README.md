@@ -1,6 +1,17 @@
 # 傳播光 (LightMesh)
 
-傳播光是一個線上 / 離線光之網絡聊天工具。線上模式可透過 WebSocket relay 讓用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，用戶仍可透過藍芽 Mesh、同一個 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通的 LAN 進入同一個本地傳播頻道聊天。
+傳播光 LightMesh 是一個免費的線上或離線光之網絡防災、分享物資與定位工具。
+
+WEB
+https://www.aieco.hk/community/lifebuoy
+
+IOS
+https://apps.apple.com/us/app/%E5%82%B3%E6%92%AD%E5%85%89-lightmesh/id6781610489
+
+Android
+https://play.google.com/store/apps/details?id=aieco.light.mesh
+
+線上模式可透過 WebSocket relay 讓用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，用戶仍可透過藍芽 Mesh、同一個 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通的 LAN 進入同一個本地傳播頻道聊天。
 
 ## 文件
 
