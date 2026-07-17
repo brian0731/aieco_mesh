@@ -4213,6 +4213,7 @@ enum _RadarMapMode { online, offline }
 class _LightRadarPanelState extends State<_LightRadarPanel> {
   String? _selectedContactId;
   var _selectedContactFocusVersion = 0;
+  var _locationFocusVersion = 0;
   var _mapMode = _googleMapsApiKey.isEmpty
       ? _RadarMapMode.offline
       : _RadarMapMode.online;
@@ -4224,6 +4225,14 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
         _selectedContactFocusVersion += 1;
       }
     });
+  }
+
+  void _locate() {
+    setState(() {
+      _selectedContactId = null;
+      _locationFocusVersion += 1;
+    });
+    widget.onLocate();
   }
 
   @override
@@ -4292,7 +4301,7 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                                 : nearbyCount == 0
                                 ? effectiveMapMode == _RadarMapMode.online
                                       ? '線上 Google Map'
-                                      : '離線局部地圖'
+                                      : '香港18區離線地圖'
                                 : '$_nearbyRadarLabel $nearbyCount 個光點',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
@@ -4346,7 +4355,7 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                       },
                     ),
                     FilledButton.icon(
-                      onPressed: widget.radar.busy ? null : widget.onLocate,
+                      onPressed: widget.radar.busy ? null : _locate,
                       icon: widget.radar.busy
                           ? const SizedBox(
                               width: 16,
@@ -4383,6 +4392,7 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                       contacts: contacts,
                       nearbyContactIds: nearbyContactIds,
                       refreshSignature: radarMapSignature,
+                      locationFocusVersion: _locationFocusVersion,
                       selectedContactId: selectedContactId,
                       selectedContactFocusVersion: _selectedContactFocusVersion,
                       onSelectedContactChanged: _selectContact,
@@ -4918,6 +4928,7 @@ class _OfflineHongKongMap extends StatefulWidget {
     required this.contacts,
     required this.nearbyContactIds,
     required this.refreshSignature,
+    required this.locationFocusVersion,
     required this.selectedContactId,
     required this.selectedContactFocusVersion,
     required this.onSelectedContactChanged,
@@ -4928,6 +4939,7 @@ class _OfflineHongKongMap extends StatefulWidget {
   final List<RadarContact> contacts;
   final Set<String> nearbyContactIds;
   final String refreshSignature;
+  final int locationFocusVersion;
   final String? selectedContactId;
   final int selectedContactFocusVersion;
   final ValueChanged<String?> onSelectedContactChanged;
@@ -4946,6 +4958,11 @@ class _OfflineHongKongMapState extends State<_OfflineHongKongMap> {
   @override
   void didUpdateWidget(covariant _OfflineHongKongMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    if (widget.locationFocusVersion != oldWidget.locationFocusVersion) {
+      _selectedDistrictName = null;
+      _mapScopeKey = null;
+    }
 
     final selectedContactId = widget.selectedContactId;
     final nextDistrictName = widget.location == null
@@ -5072,6 +5089,14 @@ class _OfflineHongKongMapState extends State<_OfflineHongKongMap> {
     return _contactById(selectedContactId);
   }
 
+  void _selectDistrict(String districtName) {
+    widget.onSelectedContactChanged(null);
+    setState(() {
+      _selectedDistrictName = districtName;
+      _mapScopeKey = null;
+    });
+  }
+
   void _scheduleMapScopeReset(String nextScopeKey) {
     if (_mapScopeKey == nextScopeKey) {
       return;
@@ -5092,15 +5117,17 @@ class _OfflineHongKongMapState extends State<_OfflineHongKongMap> {
         ? null
         : _districtNameForLocation(widget.location!);
     final activeDistrictName = _selectedDistrictName ?? currentDistrictName;
-    final visibleDistricts = _visibleDistrictsForRadar(
-      activeDistrictName: activeDistrictName,
-      contacts: widget.contacts,
-    );
-    final mapBounds =
-        _mapBoundsForDistricts(visibleDistricts) ?? _MapBounds.hongKong;
-    final mapScopeKey = visibleDistricts.isEmpty
-        ? 'none'
-        : visibleDistricts.map((district) => district.name).join('|');
+    final visibleDistricts = _localizedDistrictsForDistrict(activeDistrictName);
+    final activeDistrict = activeDistrictName == null
+        ? null
+        : _districtByName(activeDistrictName);
+    final mapBounds = activeDistrict == null
+        ? _MapBounds.hongKong
+        : _mapBoundsForDistricts([activeDistrict]) ?? _MapBounds.hongKong;
+    final mapScopeKey = activeDistrictName ?? 'hong-kong-18-districts';
+    final mapAsset = activeDistrictName == null
+        ? 'assets/images/hong_kong_18_districts.jpg'
+        : _districtMapAsset(activeDistrictName);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
@@ -5134,18 +5161,32 @@ class _OfflineHongKongMapState extends State<_OfflineHongKongMap> {
                   child: SizedBox(
                     width: mapSize.width,
                     height: mapSize.height,
-                    child: CustomPaint(
-                      painter: _HongKongMapPainter(
-                        location: widget.location,
-                        contacts: widget.contacts,
-                        nearbyContactIds: widget.nearbyContactIds,
-                        refreshSignature: widget.refreshSignature,
-                        selectedContactId: widget.selectedContactId,
-                        currentDistrictName: activeDistrictName,
-                        visibleDistricts: visibleDistricts,
-                        mapBounds: mapBounds,
-                        textScaler: MediaQuery.textScalerOf(context),
-                      ),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.asset(
+                          mapAsset,
+                          key: const ValueKey(
+                            'offline-hong-kong-18-district-map',
+                          ),
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.medium,
+                          semanticLabel: '香港十八區離線地圖',
+                        ),
+                        CustomPaint(
+                          painter: _HongKongMapPainter(
+                            location: widget.location,
+                            contacts: widget.contacts,
+                            nearbyContactIds: widget.nearbyContactIds,
+                            refreshSignature: widget.refreshSignature,
+                            selectedContactId: widget.selectedContactId,
+                            currentDistrictName: activeDistrictName,
+                            visibleDistricts: visibleDistricts,
+                            mapBounds: mapBounds,
+                            textScaler: MediaQuery.textScalerOf(context),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -5166,15 +5207,98 @@ class _OfflineHongKongMapState extends State<_OfflineHongKongMap> {
                   mapBounds.containsLocation(selectedContact.location))
                 Positioned(
                   right: 8,
-                  bottom: 8,
+                  bottom: visibleDistricts.length > 1 ? 78 : 8,
                   child: _MapContactQuoteAction(
                     contact: selectedContact,
                     onQuoteContactName: widget.onQuoteContactName,
                   ),
                 ),
+              if (visibleDistricts.length > 1)
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                  height: 62,
+                  child: Row(
+                    children: [
+                      for (final district in visibleDistricts)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 3),
+                            child: _DistrictMapThumbnail(
+                              district: district,
+                              selected: district.name == activeDistrictName,
+                              onTap: () => _selectDistrict(district.name),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _DistrictMapThumbnail extends StatelessWidget {
+  const _DistrictMapThumbnail({
+    required this.district,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _DistrictShape district;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: selected ? const Color(0xFF0D7C66) : Colors.white,
+          width: selected ? 3 : 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(_districtMapAsset(district.name), fit: BoxFit.cover),
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: ColoredBox(
+                color: selected
+                    ? const Color(0xE60D7C66)
+                    : const Color(0xC9000000),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      district.name,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -6160,16 +6284,7 @@ class _HongKongMapPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
     final mapRect = _fitMapRect(rect.deflate(10), mapBounds);
-    final seaPaint = Paint()..color = const Color(0xFFD8EEF1);
-    final gridPaint = Paint()
-      ..color = const Color(0x55FFFFFF)
-      ..strokeWidth = 1;
-
-    canvas.drawRect(rect, seaPaint);
-    _drawGrid(canvas, mapRect, gridPaint);
-    _drawDistrictAreas(canvas, mapRect);
-
-    _drawScaleCaption(canvas, mapRect);
+    _drawFocusedDistricts(canvas, mapRect);
 
     final currentLocation = location;
     final visibleContacts = contacts
@@ -6184,46 +6299,7 @@ class _HongKongMapPainter extends CustomPainter {
       _drawEmptyHint(canvas, mapRect);
     }
 
-    _drawDistrictLabels(canvas, mapRect);
     _drawSelectedContactLabel(canvas, mapRect);
-  }
-
-  void _drawGrid(Canvas canvas, Rect rect, Paint paint) {
-    for (var i = 1; i < 4; i += 1) {
-      final x = rect.left + rect.width * i / 4;
-      canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), paint);
-    }
-    for (var i = 1; i < 4; i += 1) {
-      final y = rect.top + rect.height * i / 4;
-      canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), paint);
-    }
-  }
-
-  void _drawDistrictAreas(Canvas canvas, Rect rect) {
-    final outlinePaint = Paint()
-      ..color = const Color(0x995D5F5A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.15;
-
-    for (final district in visibleDistricts) {
-      _drawLand(
-        canvas,
-        rect,
-        Paint()..color = district.color,
-        outlinePaint,
-        district.points,
-      );
-    }
-
-    if (visibleDistricts.isNotEmpty) {
-      for (final island in _islands) {
-        if (mapBounds.containsPoint(island.center)) {
-          _drawIsland(canvas, rect, island.center, island.width, island.height);
-        }
-      }
-    }
-
-    _drawFocusedDistricts(canvas, rect);
   }
 
   void _drawFocusedDistricts(Canvas canvas, Rect rect) {
@@ -6247,12 +6323,6 @@ class _HongKongMapPainter extends CustomPainter {
     }
   }
 
-  void _drawDistrictLabels(Canvas canvas, Rect rect) {
-    for (final district in visibleDistricts) {
-      _drawLabel(canvas, rect, district.name, district.labelPoint);
-    }
-  }
-
   void _drawLand(
     Canvas canvas,
     Rect rect,
@@ -6272,70 +6342,6 @@ class _HongKongMapPainter extends CustomPainter {
     path.close();
     canvas.drawPath(path, fill);
     canvas.drawPath(path, outline);
-  }
-
-  void _drawIsland(
-    Canvas canvas,
-    Rect rect,
-    _MapPoint center,
-    double width,
-    double height,
-  ) {
-    final paint = Paint()..color = const Color(0xFFE7C86D);
-    final outline = Paint()
-      ..color = const Color(0xFF5D6F68)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.1;
-    final projected = _project(center, rect);
-    final islandRect = Rect.fromCenter(
-      center: projected,
-      width: width,
-      height: height,
-    );
-    canvas.drawOval(islandRect, paint);
-    canvas.drawOval(islandRect, outline);
-  }
-
-  void _drawLabel(Canvas canvas, Rect rect, String label, _MapPoint point) {
-    final offset = _project(point, rect);
-    final fontSize = textScaler.scale(12);
-    final painter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(
-          color: const Color(0xFF26332F),
-          fontWeight: FontWeight.w800,
-          fontSize: fontSize,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final labelRect = Rect.fromCenter(
-      center: offset,
-      width: painter.width + 10,
-      height: painter.height + 5,
-    );
-    final background = RRect.fromRectAndRadius(
-      labelRect,
-      Radius.circular(max(4, fontSize * 0.35)),
-    );
-    canvas.drawRRect(background, Paint()..color = const Color(0xDDF9FBF7));
-    painter.paint(canvas, labelRect.topLeft + const Offset(5, 2.5));
-  }
-
-  void _drawScaleCaption(Canvas canvas, Rect rect) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: '香港離線雷達',
-        style: TextStyle(
-          color: const Color(0xFF345B58),
-          fontWeight: FontWeight.w800,
-          fontSize: textScaler.scale(12),
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: rect.width);
-    painter.paint(canvas, Offset(rect.left + 8, rect.top + 8));
   }
 
   void _drawEmptyHint(Canvas canvas, Rect rect) {
@@ -6823,12 +6829,6 @@ class _HongKongMapPainter extends CustomPainter {
       ],
     ),
   ];
-
-  static const List<_IslandShape> _islands = [
-    _IslandShape(center: _MapPoint(22.21, 114.12), width: 12, height: 5),
-    _IslandShape(center: _MapPoint(22.16, 114.02), width: 8, height: 4),
-    _IslandShape(center: _MapPoint(22.28, 114.33), width: 9, height: 5),
-  ];
 }
 
 class _MapPoint {
@@ -6927,18 +6927,6 @@ class _DistrictShape {
   final List<_MapPoint> points;
 }
 
-class _IslandShape {
-  const _IslandShape({
-    required this.center,
-    required this.width,
-    required this.height,
-  });
-
-  final _MapPoint center;
-  final double width;
-  final double height;
-}
-
 String? _districtNameForLocation(DeviceLocation location) {
   return _districtNameForPoint(
     _MapPoint(location.latitude, location.longitude),
@@ -6974,84 +6962,39 @@ List<_DistrictShape> _localizedDistrictsForDistrict(String? districtName) {
 
   final districts = _HongKongMapPainter._districts.toList()
     ..sort((a, b) {
-      if (a.name == anchorDistrict.name) {
-        return -1;
-      }
-      if (b.name == anchorDistrict.name) {
-        return 1;
-      }
-
-      final aDistance = _mapPointDistance(
+      if (a.name == anchorDistrict.name) return -1;
+      if (b.name == anchorDistrict.name) return 1;
+      final distanceCompare = _mapPointDistance(
         a.labelPoint,
         anchorDistrict.labelPoint,
-      );
-      final bDistance = _mapPointDistance(
-        b.labelPoint,
-        anchorDistrict.labelPoint,
-      );
-      final distanceCompare = aDistance.compareTo(bDistance);
-      if (distanceCompare != 0) {
-        return distanceCompare;
-      }
-      return _districtOrder(a.name).compareTo(_districtOrder(b.name));
+      ).compareTo(_mapPointDistance(b.labelPoint, anchorDistrict.labelPoint));
+      return distanceCompare != 0
+          ? distanceCompare
+          : _districtOrder(a.name).compareTo(_districtOrder(b.name));
     });
 
   return List.unmodifiable(districts.take(3));
 }
 
-List<_DistrictShape> _visibleDistrictsForRadar({
-  required String? activeDistrictName,
-  required List<RadarContact> contacts,
-}) {
-  final districts = <_DistrictShape>[
-    ..._localizedDistrictsForDistrict(activeDistrictName),
-  ];
-  final seenDistrictNames = districts.map((district) => district.name).toSet();
-
-  for (final contact in contacts.where((contact) => contact.isSosActive)) {
-    final districtName = _districtNameForLocation(contact.location);
-    if (districtName == null || seenDistrictNames.contains(districtName)) {
-      continue;
-    }
-    final district = _districtByName(districtName);
-    if (district == null) {
-      continue;
-    }
-    districts.add(district);
-    seenDistrictNames.add(district.name);
-  }
-
-  if (districts.isEmpty && contacts.any((contact) => contact.isSosActive)) {
-    return _HongKongMapPainter._districts;
-  }
-
-  return List.unmodifiable(districts);
-}
-
 _MapBounds? _mapBoundsForDistricts(List<_DistrictShape> districts) {
-  if (districts.isEmpty) {
-    return null;
-  }
-
+  if (districts.isEmpty) return null;
   final points = districts.expand((district) => district.points).toList();
   var minLatitude = points.first.latitude;
   var maxLatitude = points.first.latitude;
   var minLongitude = points.first.longitude;
   var maxLongitude = points.first.longitude;
-
   for (final point in points.skip(1)) {
     minLatitude = min(minLatitude, point.latitude);
     maxLatitude = max(maxLatitude, point.latitude);
     minLongitude = min(minLongitude, point.longitude);
     maxLongitude = max(maxLongitude, point.longitude);
   }
-
   return _MapBounds(
     minLatitude: minLatitude,
     maxLatitude: maxLatitude,
     minLongitude: minLongitude,
     maxLongitude: maxLongitude,
-  ).padded(0.18);
+  ).padded(0.28);
 }
 
 double _mapPointDistance(_MapPoint a, _MapPoint b) {
@@ -7060,6 +7003,33 @@ double _mapPointDistance(_MapPoint a, _MapPoint b) {
       (a.longitude - b.longitude) *
       cos(_degreesToRadians((a.latitude + b.latitude) / 2));
   return sqrt(dLat * dLat + dLng * dLng);
+}
+
+String _districtMapAsset(String districtName) {
+  const assets = <String, String>{
+    '屯門區': 'tuen_mun',
+    '元朗區': 'yuen_long',
+    '北區': 'north',
+    '大埔區': 'tai_po',
+    '西貢區': 'sai_kung',
+    '沙田區': 'sha_tin',
+    '荃灣區': 'tsuen_wan',
+    '葵青區': 'kwai_tsing',
+    '深水埗': 'sham_shui_po',
+    '黃大仙': 'wong_tai_sin',
+    '九龍城': 'kowloon_city',
+    '觀塘': 'kwun_tong',
+    '油尖旺': 'yau_tsim_mong',
+    '中西區': 'central_western',
+    '灣仔區': 'wan_chai',
+    '東區': 'eastern',
+    '南區': 'southern',
+    '離島區': 'islands',
+  };
+  final slug = assets[districtName];
+  return slug == null
+      ? 'assets/images/hong_kong_18_districts.jpg'
+      : 'assets/images/districts/$slug.jpg';
 }
 
 Rect _fitMapRect(Rect rect, _MapBounds bounds) {

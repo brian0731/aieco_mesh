@@ -660,7 +660,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('光之雷達'), findsWidgets);
-    expect(find.text('離線局部地圖'), findsOneWidget);
+    expect(find.text('香港18區離線地圖'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('offline-hong-kong-18-district-map')),
+      findsOneWidget,
+    );
     expect(find.text('最近10個光點'), findsOneWidget);
     expect(find.text('請先定位'), findsOneWidget);
     expect(find.text('定位'), findsOneWidget);
