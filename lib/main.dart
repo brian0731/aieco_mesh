@@ -8,7 +8,9 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/services.dart';
+import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -40,6 +42,16 @@ const Duration _wirelessStatusInterval = Duration(seconds: 6);
 const Duration _wifiGroupInterval = Duration(minutes: 5);
 const double _hongKongCenterLatitude = 22.3193;
 const double _hongKongCenterLongitude = 114.1694;
+const double _wongTaiSinMeetupLatitude = 22.34218;
+const double _wongTaiSinMeetupLongitude = 114.19355;
+const String _wongTaiSinMeetupId = 'wong-tai-sin-temple-meetup';
+const String _wongTaiSinMeetupName = '集合點';
+const String _hongKongOfflineTileTemplate =
+    'assets/map_tiles/hong_kong/{z}/{x}/{y}.png';
+const String _hongKongOfflineTilePrefix = 'assets/map_tiles/hong_kong/';
+const int _hongKongOfflineMinZoom = 10;
+const int _hongKongOfflineMaxNativeZoom = 16;
+const int _hongKongOfflineMaxZoom = 18;
 const String _moderationContactEmail = 'info@aieco.hk';
 const String _moderationResponseWindow = '24 小時';
 
@@ -4382,6 +4394,7 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                       location: location,
                       contacts: contacts,
                       nearbyContactIds: nearbyContactIds,
+                      locationFocusVersion: _locationFocusVersion,
                       selectedContactId: selectedContactId,
                       selectedContactFocusVersion: _selectedContactFocusVersion,
                       onSelectedContactChanged: _selectContact,
@@ -4946,9 +4959,330 @@ class _OfflineHongKongMap extends StatefulWidget {
   final ValueChanged<String> onQuoteContactName;
 
   @override
-  State<_OfflineHongKongMap> createState() => _OfflineHongKongMapState();
+  State<_OfflineHongKongMap> createState() => _OfflineHongKongTileMapState();
 }
 
+/// Offline map backed by a real XYZ tile pyramid. The legacy image renderer
+/// below remains in the source as a compatibility fallback for installations
+/// that have not imported the tile bundle yet.
+class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
+  final MapController _mapController = MapController();
+  late Future<bool> _hasOfflineTiles;
+  var _pendingLocationFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hasOfflineTiles = _checkOfflineTiles();
+  }
+
+  Future<bool> _checkOfflineTiles() async {
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    final assets = manifest.listAssets();
+    bool containsZoom(int zoom) => assets.any(
+      (asset) =>
+          asset.startsWith('$_hongKongOfflineTilePrefix$zoom/') &&
+          asset.endsWith('.png'),
+    );
+    return containsZoom(_hongKongOfflineMinZoom) &&
+        containsZoom(_hongKongOfflineMaxNativeZoom);
+  }
+
+  LatLng get _center => widget.location == null
+      ? const LatLng(_hongKongCenterLatitude, _hongKongCenterLongitude)
+      : LatLng(widget.location!.latitude, widget.location!.longitude);
+
+  void _focus(LatLng point) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _mapController.move(point, 17);
+    });
+  }
+
+  void _focusMeetup() {
+    _mapController.move(
+      const LatLng(_wongTaiSinMeetupLatitude, _wongTaiSinMeetupLongitude),
+      17,
+    );
+    widget.onSelectedContactChanged(null);
+  }
+
+  @override
+  void didUpdateWidget(covariant _OfflineHongKongMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.locationFocusVersion != oldWidget.locationFocusVersion) {
+      _pendingLocationFocus = true;
+      if (widget.location != null) {
+        _pendingLocationFocus = false;
+        _focus(_latLng(widget.location!));
+      }
+      return;
+    }
+    if (_pendingLocationFocus && widget.location != null) {
+      _pendingLocationFocus = false;
+      _focus(_latLng(widget.location!));
+      return;
+    }
+    if (widget.selectedContactFocusVersion !=
+        oldWidget.selectedContactFocusVersion) {
+      final selected = widget.contacts.where(
+        (contact) => contact.id == widget.selectedContactId,
+      );
+      _focus(selected.isNotEmpty ? _latLng(selected.first.location) : _center);
+    }
+  }
+
+  LatLng _latLng(DeviceLocation location) =>
+      LatLng(location.latitude, location.longitude);
+
+  RadarContact? get _selectedContact {
+    for (final contact in widget.contacts) {
+      if (contact.id == widget.selectedContactId) return contact;
+    }
+    return null;
+  }
+
+  void _changeZoom(double delta) {
+    final camera = _mapController.camera;
+    _mapController.move(
+      camera.center,
+      (camera.zoom + delta)
+          .clamp(_hongKongOfflineMinZoom, _hongKongOfflineMaxZoom)
+          .toDouble(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  List<Marker> _markers() {
+    final contacts = <RadarContact>[...widget.contacts];
+    if (widget.location != null && !contacts.any((contact) => contact.isMe)) {
+      contacts.insert(
+        0,
+        RadarContact(
+          id: 'current-device',
+          name: '目前位置',
+          location: widget.location!,
+          isMe: true,
+          isSosActive: false,
+          lastSeen: DateTime.now(),
+        ),
+      );
+    }
+    final markers = contacts.map((contact) {
+      final selected = contact.id == widget.selectedContactId;
+      final color = contact.isSosActive
+          ? const Color(0xFFB00020)
+          : contact.isMe
+          ? const Color(0xFF0D7C66)
+          : selected
+          ? const Color(0xFFEF6C00)
+          : const Color(0xFF1565C0);
+      return Marker(
+        point: _latLng(contact.location),
+        width: 126,
+        height: 52,
+        alignment: Alignment.topCenter,
+        child: GestureDetector(
+          onTap: contact.isMe
+              ? null
+              : () => widget.onSelectedContactChanged(contact.id),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.location_on, size: 36, color: color),
+              Flexible(
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(color: Color(0xCCFFFFFF)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: Text(
+                      contact.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
+    markers.add(
+      Marker(
+        point: const LatLng(
+          _wongTaiSinMeetupLatitude,
+          _wongTaiSinMeetupLongitude,
+        ),
+        width: 92,
+        height: 58,
+        alignment: Alignment.topCenter,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _focusMeetup,
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.groups, size: 34, color: Color(0xFFF9A825)),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Color(0xEEFFF8E1),
+                  borderRadius: BorderRadius.all(Radius.circular(4)),
+                ),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  child: Text(
+                    _wongTaiSinMeetupName,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return markers;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _hasOfflineTiles,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 10),
+                Text('正在載入香港離線地圖…'),
+              ],
+            ),
+          );
+        }
+        if (snapshot.data != true) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.asset(
+                widget.location == null
+                    ? 'assets/images/hong_kong_18_districts.jpg'
+                    : _districtMapAsset(
+                        _districtNameForLocation(widget.location!) ?? '中西區',
+                      ),
+                key: const ValueKey('offline-hong-kong-18-district-map'),
+                fit: BoxFit.contain,
+              ),
+              const Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Chip(label: Text('未匯入街道瓦片：目前顯示概覽圖')),
+                ),
+              ),
+            ],
+          );
+        }
+        final selectedContact = _selectedContact;
+        return Stack(
+          children: [
+            FlutterMap(
+              key: const ValueKey('offline-hong-kong-18-district-map'),
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _center,
+                initialZoom: widget.location == null ? 10.5 : 14,
+                minZoom: _hongKongOfflineMinZoom.toDouble(),
+                maxZoom: _hongKongOfflineMaxZoom.toDouble(),
+                cameraConstraint: CameraConstraint.containCenter(
+                  bounds: LatLngBounds(
+                    const LatLng(22.565, 114.52),
+                    const LatLng(22.14, 113.80),
+                  ),
+                ),
+                onTap: (_, _) => widget.onSelectedContactChanged(null),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: _hongKongOfflineTileTemplate,
+                  tileProvider: AssetTileProvider(),
+                  minNativeZoom: _hongKongOfflineMinZoom,
+                  maxNativeZoom: _hongKongOfflineMaxNativeZoom,
+                  panBuffer: 0,
+                  tileBounds: LatLngBounds(
+                    const LatLng(22.565, 114.52),
+                    const LatLng(22.14, 113.80),
+                  ),
+                  errorImage: const AssetImage(
+                    'assets/images/hong_kong_18_districts.jpg',
+                  ),
+                ),
+                MarkerLayer(markers: _markers()),
+              ],
+            ),
+            Positioned(
+              right: 8,
+              top: 8,
+              child: Column(
+                children: [
+                  IconButton.filledTonal(
+                    tooltip: '放大地圖',
+                    onPressed: () => _changeZoom(1),
+                    icon: const Icon(Icons.add),
+                  ),
+                  const SizedBox(height: 4),
+                  IconButton.filledTonal(
+                    tooltip: '縮小地圖',
+                    onPressed: () => _changeZoom(-1),
+                    icon: const Icon(Icons.remove),
+                  ),
+                ],
+              ),
+            ),
+            const Positioned(
+              left: 6,
+              bottom: 4,
+              child: DecoratedBox(
+                decoration: BoxDecoration(color: Color(0xCCFFFFFF)),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Text(
+                    '© OpenStreetMap contributors',
+                    style: TextStyle(fontSize: 9, color: Color(0xFF33423B)),
+                  ),
+                ),
+              ),
+            ),
+            if (selectedContact != null && !selectedContact.isMe)
+              Positioned(
+                right: 8,
+                bottom: 24,
+                child: _MapContactQuoteAction(
+                  contact: selectedContact,
+                  onQuoteContactName: widget.onQuoteContactName,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// Retained temporarily so older image-map behaviour can be compared or
+// restored while tile bundles are rolled out to existing installations.
+// ignore: unused_element
 class _OfflineHongKongMapState extends State<_OfflineHongKongMap> {
   final TransformationController _transformationController =
       TransformationController();
@@ -5313,6 +5647,7 @@ class _OnlineGoogleRadarMap extends StatefulWidget {
     required this.location,
     required this.contacts,
     required this.nearbyContactIds,
+    required this.locationFocusVersion,
     required this.selectedContactId,
     required this.selectedContactFocusVersion,
     required this.onSelectedContactChanged,
@@ -5326,6 +5661,7 @@ class _OnlineGoogleRadarMap extends StatefulWidget {
   final DeviceLocation? location;
   final List<RadarContact> contacts;
   final Set<String> nearbyContactIds;
+  final int locationFocusVersion;
   final String? selectedContactId;
   final int selectedContactFocusVersion;
   final ValueChanged<String?> onSelectedContactChanged;
@@ -5518,6 +5854,18 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
     if (!hasMe && location != null) {
       contacts.insert(0, _locationToMap(location));
     }
+    contacts.add(const <String, Object?>{
+      'id': _wongTaiSinMeetupId,
+      'name': _wongTaiSinMeetupName,
+      'lat': _wongTaiSinMeetupLatitude,
+      'lng': _wongTaiSinMeetupLongitude,
+      'accuracyMeters': 0.0,
+      'isMe': false,
+      'isSosActive': false,
+      'isNearby': false,
+      'isMeetup': true,
+      'district': '黃大仙區',
+    });
 
     final center = location == null
         ? const <String, double>{
@@ -5528,7 +5876,9 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
 
     return <String, Object?>{
       'center': center,
+      'hasLocation': location != null,
       'contacts': contacts,
+      'locationFocusVersion': widget.locationFocusVersion,
       'selectedContactId': widget.selectedContactId,
       'selectedContactFocusVersion': widget.selectedContactFocusVersion,
     };
@@ -5878,7 +6228,11 @@ String _googleRadarMapHtml({
     let accuracyCircles = {};
     let markerContacts = {};
     let lastFocusVersion = -1;
+    let lastLocationFocusVersion = -1;
     let lastCenterKey = '';
+    let meetupFocused = false;
+    let locationFocused = false;
+    let pendingLocationFocus = false;
     let mapReadyPosted = false;
     let mapErrorPosted = false;
 
@@ -5946,11 +6300,34 @@ String _googleRadarMapHtml({
       });
       removeMissingMarkers(nextIds);
 
+      const locationFocusVersion = Number(state.locationFocusVersion || 0);
+      if (lastLocationFocusVersion !== locationFocusVersion) {
+        if (lastLocationFocusVersion >= 0) {
+          pendingLocationFocus = true;
+        }
+        meetupFocused = false;
+        lastCenterKey = '';
+        lastLocationFocusVersion = locationFocusVersion;
+      }
+
+      const center = normalizePosition(state.center);
+      if (pendingLocationFocus && state.hasLocation === true && center) {
+        pendingLocationFocus = false;
+        locationFocused = true;
+        map.panTo(center);
+        map.setZoom(17);
+        lastCenterKey = center.lat.toFixed(6) + ',' + center.lng.toFixed(6);
+        infoWindow.close();
+        return;
+      }
+
       const selectedId = state.selectedContactId
         ? String(state.selectedContactId)
         : '';
       const selectedMarker = selectedId ? markers[selectedId] : null;
       if (selectedMarker) {
+        meetupFocused = false;
+        locationFocused = false;
         const focusVersion = Number(state.selectedContactFocusVersion || 0);
         if (lastFocusVersion !== focusVersion) {
           map.panTo(selectedMarker.getPosition());
@@ -5961,15 +6338,23 @@ String _googleRadarMapHtml({
         return;
       }
 
-      const center = normalizePosition(state.center);
-      if (center) {
+      if (center && locationFocused) {
+        const centerKey = center.lat.toFixed(6) + ',' + center.lng.toFixed(6);
+        if (centerKey !== lastCenterKey) {
+          map.panTo(center);
+          lastCenterKey = centerKey;
+        }
+        if ((map.getZoom() || 0) < 17) {
+          map.setZoom(17);
+        }
+      } else if (center && !meetupFocused) {
         const centerKey = center.lat.toFixed(6) + ',' + center.lng.toFixed(6);
         if (centerKey !== lastCenterKey) {
           map.setCenter(center);
           lastCenterKey = centerKey;
-        }
-        if ((map.getZoom() || 0) > 13) {
-          map.setZoom(11);
+          if ((map.getZoom() || 0) > 13) {
+            map.setZoom(11);
+          }
         }
       }
       infoWindow.close();
@@ -6002,13 +6387,16 @@ String _googleRadarMapHtml({
       const isMe = contact.isMe === true;
       const isNearby = contact.isNearby === true;
       const isSosActive = contact.isSosActive === true;
+      const isMeetup = contact.isMeetup === true;
       return {
         map,
         position,
         title: isSosActive
           ? '求救 · ' + String(contact.name || '光點')
           : String(contact.name || '光點'),
-        label: isSosActive
+        label: isMeetup
+          ? { text: '集合點', color: '#5d4037', fontWeight: '900' }
+          : isSosActive
           ? { text: 'SOS', color: '#ffffff', fontWeight: '900' }
           : isMe
           ? { text: '我', color: '#ffffff', fontWeight: '800' }
@@ -6017,15 +6405,16 @@ String _googleRadarMapHtml({
             : null,
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
-          scale: isSosActive ? 13 : isMe ? 12 : 9,
+          scale: isMeetup ? 12 : isSosActive ? 13 : isMe ? 12 : 9,
           fillColor: isSosActive
             ? '#b00020'
+            : isMeetup ? '#f9a825'
             : isMe ? '#0d7c66' : isNearby ? '#d73535' : '#1f6feb',
           fillOpacity: 1,
           strokeColor: isSosActive ? '#ffdad6' : '#ffffff',
           strokeWeight: isSosActive ? 4 : 3
         },
-        zIndex: isSosActive ? 30 : isMe ? 20 : isNearby ? 15 : 10
+        zIndex: isMeetup ? 25 : isSosActive ? 30 : isMe ? 20 : isNearby ? 15 : 10
       };
     }
 
@@ -6047,6 +6436,15 @@ String _googleRadarMapHtml({
         marker = new google.maps.Marker(markerOptions(contact, position));
         marker.addListener('click', () => {
           openInfo(marker, markerContacts[id]);
+          if (markerContacts[id]?.isMeetup === true) {
+            meetupFocused = true;
+            locationFocused = false;
+            map.panTo(marker.getPosition());
+            map.setZoom(Math.max(map.getZoom() || 11, 17));
+            return;
+          }
+          meetupFocused = false;
+          locationFocused = false;
           postSelection(id);
         });
         markers[id] = marker;
@@ -6117,7 +6515,7 @@ String _googleRadarMapHtml({
       text.appendChild(metaLine);
       row.appendChild(text);
 
-      if (contact.isMe !== true) {
+      if (contact.isMe !== true && contact.isMeetup !== true) {
         const quoteButton = document.createElement('button');
         quoteButton.type = 'button';
         quoteButton.className = 'info-copy';
