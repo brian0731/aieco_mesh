@@ -52,6 +52,16 @@ const String _hongKongOfflineTilePrefix = 'assets/map_tiles/hong_kong/';
 const int _hongKongOfflineMinZoom = 10;
 const int _hongKongOfflineMaxNativeZoom = 16;
 const int _hongKongOfflineMaxZoom = 18;
+const int _kowloonOfflineDetailZoom = 17;
+const double _kowloonDetailWest = 114.12;
+const double _kowloonDetailEast = 114.27;
+const double _kowloonDetailNorth = 22.39;
+const double _kowloonDetailSouth = 22.29;
+const int _wongTaiSinOfflineDetailZoom = 18;
+const double _wongTaiSinDetailWest = 114.18;
+const double _wongTaiSinDetailEast = 114.24;
+const double _wongTaiSinDetailNorth = 22.36;
+const double _wongTaiSinDetailSouth = 22.32;
 const String _moderationContactEmail = 'info@aieco.hk';
 const String _moderationResponseWindow = '24 小時';
 
@@ -5226,6 +5236,30 @@ class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
                   ),
                   errorImage: const AssetImage(
                     'assets/images/hong_kong_18_districts.jpg',
+                  ),
+                ),
+                TileLayer(
+                  urlTemplate: _hongKongOfflineTileTemplate,
+                  tileProvider: AssetTileProvider(),
+                  minZoom: _kowloonOfflineDetailZoom.toDouble(),
+                  minNativeZoom: _kowloonOfflineDetailZoom,
+                  maxNativeZoom: _kowloonOfflineDetailZoom,
+                  panBuffer: 0,
+                  tileBounds: LatLngBounds(
+                    const LatLng(_kowloonDetailNorth, _kowloonDetailEast),
+                    const LatLng(_kowloonDetailSouth, _kowloonDetailWest),
+                  ),
+                ),
+                TileLayer(
+                  urlTemplate: _hongKongOfflineTileTemplate,
+                  tileProvider: AssetTileProvider(),
+                  minZoom: _wongTaiSinOfflineDetailZoom.toDouble(),
+                  minNativeZoom: _wongTaiSinOfflineDetailZoom,
+                  maxNativeZoom: _wongTaiSinOfflineDetailZoom,
+                  panBuffer: 0,
+                  tileBounds: LatLngBounds(
+                    const LatLng(_wongTaiSinDetailNorth, _wongTaiSinDetailEast),
+                    const LatLng(_wongTaiSinDetailSouth, _wongTaiSinDetailWest),
                   ),
                 ),
                 MarkerLayer(markers: _markers()),

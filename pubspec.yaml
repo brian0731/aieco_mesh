@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.5+115
+version: 1.1.6+116
 
 environment:
   sdk: ^3.12.0
@@ -331,6 +331,107 @@ flutter:
     - assets/map_tiles/hong_kong/16/53613/
     - assets/map_tiles/hong_kong/16/53614/
     - assets/map_tiles/hong_kong/16/53615/
+    - assets/map_tiles/hong_kong/17/107085/
+    - assets/map_tiles/hong_kong/17/107086/
+    - assets/map_tiles/hong_kong/17/107087/
+    - assets/map_tiles/hong_kong/17/107088/
+    - assets/map_tiles/hong_kong/17/107089/
+    - assets/map_tiles/hong_kong/17/107090/
+    - assets/map_tiles/hong_kong/17/107091/
+    - assets/map_tiles/hong_kong/17/107092/
+    - assets/map_tiles/hong_kong/17/107093/
+    - assets/map_tiles/hong_kong/17/107094/
+    - assets/map_tiles/hong_kong/17/107095/
+    - assets/map_tiles/hong_kong/17/107096/
+    - assets/map_tiles/hong_kong/17/107097/
+    - assets/map_tiles/hong_kong/17/107098/
+    - assets/map_tiles/hong_kong/17/107099/
+    - assets/map_tiles/hong_kong/17/107100/
+    - assets/map_tiles/hong_kong/17/107101/
+    - assets/map_tiles/hong_kong/17/107102/
+    - assets/map_tiles/hong_kong/17/107103/
+    - assets/map_tiles/hong_kong/17/107104/
+    - assets/map_tiles/hong_kong/17/107105/
+    - assets/map_tiles/hong_kong/17/107106/
+    - assets/map_tiles/hong_kong/17/107107/
+    - assets/map_tiles/hong_kong/17/107108/
+    - assets/map_tiles/hong_kong/17/107109/
+    - assets/map_tiles/hong_kong/17/107110/
+    - assets/map_tiles/hong_kong/17/107111/
+    - assets/map_tiles/hong_kong/17/107112/
+    - assets/map_tiles/hong_kong/17/107113/
+    - assets/map_tiles/hong_kong/17/107114/
+    - assets/map_tiles/hong_kong/17/107115/
+    - assets/map_tiles/hong_kong/17/107116/
+    - assets/map_tiles/hong_kong/17/107117/
+    - assets/map_tiles/hong_kong/17/107118/
+    - assets/map_tiles/hong_kong/17/107119/
+    - assets/map_tiles/hong_kong/17/107120/
+    - assets/map_tiles/hong_kong/17/107121/
+    - assets/map_tiles/hong_kong/17/107122/
+    - assets/map_tiles/hong_kong/17/107123/
+    - assets/map_tiles/hong_kong/17/107124/
+    - assets/map_tiles/hong_kong/17/107125/
+    - assets/map_tiles/hong_kong/17/107126/
+    - assets/map_tiles/hong_kong/17/107127/
+    - assets/map_tiles/hong_kong/17/107128/
+    - assets/map_tiles/hong_kong/17/107129/
+    - assets/map_tiles/hong_kong/17/107130/
+    - assets/map_tiles/hong_kong/17/107131/
+    - assets/map_tiles/hong_kong/17/107132/
+    - assets/map_tiles/hong_kong/17/107133/
+    - assets/map_tiles/hong_kong/17/107134/
+    - assets/map_tiles/hong_kong/17/107135/
+    - assets/map_tiles/hong_kong/17/107136/
+    - assets/map_tiles/hong_kong/17/107137/
+    - assets/map_tiles/hong_kong/17/107138/
+    - assets/map_tiles/hong_kong/17/107139/
+    - assets/map_tiles/hong_kong/17/107140/
+    - assets/map_tiles/hong_kong/18/214215/
+    - assets/map_tiles/hong_kong/18/214216/
+    - assets/map_tiles/hong_kong/18/214217/
+    - assets/map_tiles/hong_kong/18/214218/
+    - assets/map_tiles/hong_kong/18/214219/
+    - assets/map_tiles/hong_kong/18/214220/
+    - assets/map_tiles/hong_kong/18/214221/
+    - assets/map_tiles/hong_kong/18/214222/
+    - assets/map_tiles/hong_kong/18/214223/
+    - assets/map_tiles/hong_kong/18/214224/
+    - assets/map_tiles/hong_kong/18/214225/
+    - assets/map_tiles/hong_kong/18/214226/
+    - assets/map_tiles/hong_kong/18/214227/
+    - assets/map_tiles/hong_kong/18/214228/
+    - assets/map_tiles/hong_kong/18/214229/
+    - assets/map_tiles/hong_kong/18/214230/
+    - assets/map_tiles/hong_kong/18/214231/
+    - assets/map_tiles/hong_kong/18/214232/
+    - assets/map_tiles/hong_kong/18/214233/
+    - assets/map_tiles/hong_kong/18/214234/
+    - assets/map_tiles/hong_kong/18/214235/
+    - assets/map_tiles/hong_kong/18/214236/
+    - assets/map_tiles/hong_kong/18/214237/
+    - assets/map_tiles/hong_kong/18/214238/
+    - assets/map_tiles/hong_kong/18/214239/
+    - assets/map_tiles/hong_kong/18/214240/
+    - assets/map_tiles/hong_kong/18/214241/
+    - assets/map_tiles/hong_kong/18/214242/
+    - assets/map_tiles/hong_kong/18/214243/
+    - assets/map_tiles/hong_kong/18/214244/
+    - assets/map_tiles/hong_kong/18/214245/
+    - assets/map_tiles/hong_kong/18/214246/
+    - assets/map_tiles/hong_kong/18/214247/
+    - assets/map_tiles/hong_kong/18/214248/
+    - assets/map_tiles/hong_kong/18/214249/
+    - assets/map_tiles/hong_kong/18/214250/
+    - assets/map_tiles/hong_kong/18/214251/
+    - assets/map_tiles/hong_kong/18/214252/
+    - assets/map_tiles/hong_kong/18/214253/
+    - assets/map_tiles/hong_kong/18/214254/
+    - assets/map_tiles/hong_kong/18/214255/
+    - assets/map_tiles/hong_kong/18/214256/
+    - assets/map_tiles/hong_kong/18/214257/
+    - assets/map_tiles/hong_kong/18/214258/
+    - assets/map_tiles/hong_kong/18/214259/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
