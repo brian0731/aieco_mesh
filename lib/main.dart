@@ -458,6 +458,15 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       unawaited(_backgroundMesh.clearChatNotifications());
       unawaited(_refreshWirelessStatusAndRejoin(forceRejoin: true));
       unawaited(_locateRadar(force: true));
+    } else if ((state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.paused ||
+            state == AppLifecycleState.hidden) &&
+        widget.autoStart &&
+        _mesh.isRunning) {
+      // Refresh the LAN addresses and announce immediately before Android/iOS
+      // applies background scheduling limits. The Android foreground service
+      // then keeps the Wi-Fi and multicast path awake.
+      unawaited(_mesh.refreshNetworkPresence());
     }
   }
 

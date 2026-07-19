@@ -12,11 +12,18 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.net.wifi.WifiManager
 
 class MeshBackgroundService : Service() {
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
+
     override fun onCreate() {
         super.onCreate()
         MeshNotifications.ensureChannels(this)
+        acquireMeshLocks()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -33,7 +40,48 @@ class MeshBackgroundService : Service() {
         return START_STICKY
     }
 
+    override fun onDestroy() {
+        releaseMeshLocks()
+        super.onDestroy()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun acquireMeshLocks() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "aieco_mesh:background_cpu"
+        ).apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        @Suppress("DEPRECATION")
+        wifiLock = wifiManager.createWifiLock(
+            WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+            "aieco_mesh:background_wifi"
+        ).apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+        multicastLock = wifiManager.createMulticastLock(
+            "aieco_mesh:background_multicast"
+        ).apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+    }
+
+    private fun releaseMeshLocks() {
+        runCatching { multicastLock?.takeIf { it.isHeld }?.release() }
+        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        multicastLock = null
+        wifiLock = null
+        wakeLock = null
+    }
 }
 
 object MeshNotifications {
