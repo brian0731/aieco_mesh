@@ -274,7 +274,12 @@ private class WifiMeshBridge(private val activity: Activity) {
         wifiDirectNetwork = null
         localNetwork = null
         bluetoothNetwork = null
-        bindProcessToNetwork(null)
+        // Do not clear the process-wide network binding here. On newer
+        // Android versions the Activity can be destroyed while the mesh
+        // foreground service is still running; clearing it disconnects the
+        // service from the Wi-Fi/P2P network and breaks background LAN chat.
+        // The binding is replaced automatically when a preferred network is
+        // discovered again, or when the process is stopped.
     }
 
     fun onResume() {
