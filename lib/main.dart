@@ -1787,6 +1787,8 @@ class _CommunityInfoTabPage extends StatelessWidget {
 
   static const _aedMapUrl =
       'https://www.google.com/maps/d/u/0/viewer?mid=1ufgVocWH6anSLW3jvn6ic5UOq5034WPW';
+  static const _lightMeshTutorialUrl =
+      'https://www.youtube.com/watch?v=q94Pgn1gSVc';
 
   Future<void> _openAedMap(BuildContext context) {
     return _openExternalUrl(context, _aedMapUrl);
@@ -1817,6 +1819,23 @@ class _CommunityInfoTabPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const _CommunityInfoHeader(),
+                    const SizedBox(height: 10),
+                    FilledButton.icon(
+                      key: const ValueKey('light-mesh-tutorial-button'),
+                      onPressed: () => unawaited(
+                        _openExternalUrl(context, _lightMeshTutorialUrl),
+                      ),
+                      icon: const Icon(Icons.play_circle_outline, size: 20),
+                      label: const Text('光網連接教學影片'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D7C66),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 44),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     const _CommunityLinkGrid(),
                     const SizedBox(height: 10),
@@ -1928,6 +1947,10 @@ class _CommunityInfoTabPage extends StatelessWidget {
                       color: const Color(0xFF880E4F),
                       title: 'AED（自動心臟除顫器）使用提醒',
                       rows: const [
+                        (
+                          '重要',
+                          'AED 應由持有效急救證書或完成 AED / CPR 訓練人士優先使用；其他人協助打 999、取 AED 及引導救護員。',
+                        ),
                         ('', '有人突然昏迷、無呼吸或疑似心臟驟停：即打 999 並派人取 AED。'),
                         ('', '開機後跟語音指示貼電極片；未聽到指示前不要觸碰傷者。'),
                         ('', '繼續心外壓，直到救護員到場、傷者恢復或現場不安全。'),
@@ -9314,6 +9337,7 @@ class _OnlineUsersStrip extends StatelessWidget {
               final label = user.isMe ? '${user.name}（你）' : user.name;
               final isSosActive = user.isSosActive;
               return DecoratedBox(
+                key: ValueKey('online-user-card-${user.id}'),
                 decoration: BoxDecoration(
                   color: isSosActive
                       ? const Color(0xFFFFEEE9)
@@ -9365,6 +9389,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                             ? '已加信用分'
                             : '為光點加信用分',
                         child: IconButton(
+                          key: ValueKey('like-online-user-${user.id}'),
                           visualDensity: VisualDensity.compact,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
@@ -9384,6 +9409,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                       ),
                       if (!user.isMe)
                         PopupMenuButton<_UserModerationAction>(
+                          key: ValueKey('moderate-online-user-${user.id}'),
                           tooltip: '用戶安全選項',
                           icon: const Icon(Icons.more_vert, size: 18),
                           padding: EdgeInsets.zero,
@@ -9517,6 +9543,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                             itemBuilder: (context, index) {
                               final user = filteredUsers[index];
                               return _OnlineUserListTile(
+                                key: ValueKey('online-user-list-${user.id}'),
                                 user: user,
                                 onEditUserName: () {
                                   Navigator.of(sheetContext).pop();
@@ -9556,6 +9583,7 @@ class _OnlineUsersStrip extends StatelessWidget {
 
 class _OnlineUserListTile extends StatelessWidget {
   const _OnlineUserListTile({
+    super.key,
     required this.user,
     required this.onEditUserName,
     required this.onQuoteUserName,
@@ -9621,6 +9649,7 @@ class _OnlineUserListTile extends StatelessWidget {
             icon: Icon(user.isMe ? Icons.edit_outlined : Icons.format_quote),
           ),
           IconButton(
+            key: ValueKey('like-listed-online-user-${user.id}'),
             tooltip: user.isMe
                 ? '不能為自己加信用分'
                 : user.likedByMe
@@ -9635,6 +9664,7 @@ class _OnlineUserListTile extends StatelessWidget {
           ),
           if (!user.isMe)
             PopupMenuButton<_UserModerationAction>(
+              key: ValueKey('moderate-listed-online-user-${user.id}'),
               tooltip: '用戶安全選項',
               onSelected: (action) {
                 switch (action) {
@@ -11482,6 +11512,27 @@ class MeshChatService extends ChangeNotifier {
   }
 
   List<MeshOnlineUser> get onlineUsers {
+    final peerUsers =
+        peers
+            .map(
+              (peer) => MeshOnlineUser(
+                id: peer.id,
+                name: peer.name,
+                displayName: peer.displayName,
+                userName: peer.userName,
+                isMe: false,
+                lastSeen: peer.lastSeen,
+                creditScore: creditScoreFor(peer.id),
+                likedByMe: hasLikedUser(peer.id),
+                isSosActive: peer.sosActive,
+              ),
+            )
+            .toList()
+          // Do not sort the interactive online-user UI by lastSeen. Heartbeats
+          // update it continuously and can move another user under a pointer
+          // between press and release. A node id is stable for the identity, so it
+          // also keeps like and moderation targets in a deterministic position.
+          ..sort((a, b) => a.id.compareTo(b.id));
     final values = <MeshOnlineUser>[
       MeshOnlineUser(
         id: _nodeId,
@@ -11494,19 +11545,7 @@ class MeshChatService extends ChangeNotifier {
         likedByMe: false,
         isSosActive: _sosActive,
       ),
-      ...peers.map(
-        (peer) => MeshOnlineUser(
-          id: peer.id,
-          name: peer.name,
-          displayName: peer.displayName,
-          userName: peer.userName,
-          isMe: false,
-          lastSeen: peer.lastSeen,
-          creditScore: creditScoreFor(peer.id),
-          likedByMe: hasLikedUser(peer.id),
-          isSosActive: peer.sosActive,
-        ),
-      ),
+      ...peerUsers,
     ];
     return List<MeshOnlineUser>.unmodifiable(values);
   }
