@@ -762,6 +762,20 @@ void main() {
     );
     expect(messageInput.decoration?.hintText, '傳送到 測試光團');
 
+    await tester.enterText(
+      find.byKey(const ValueKey('chat-message-input')),
+      '可複製留言',
+    );
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is SelectableText && widget.data == '可複製留言',
+      ),
+      findsOneWidget,
+    );
+
     await tester.tap(find.text('物資'));
     await tester.pumpAndSettle();
 

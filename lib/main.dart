@@ -11108,8 +11108,9 @@ class _MessageBubble extends StatelessWidget {
                   horizontal: 12,
                   vertical: 10,
                 ),
-                child: LocalizedText(
+                child: SelectableText(
                   message.text,
+                  key: ValueKey('selectable-message-${message.id}'),
                   style: TextStyle(color: textColor, height: 1.35),
                 ),
               ),
