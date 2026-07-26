@@ -17,6 +17,9 @@ https://play.google.com/store/apps/details?id=aieco.light.mesh
 - Whatsapp https://wa.me/+85262112160
 - LINE https://line.me/ti/p/7elEusTH6q
 
+## 光網連接教學:
+https://www.youtube.com/watch?v=q94Pgn1gSVc
+
 ## Whatsapp 防災預備與互助群組:
 https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm?s=cl&p=a&ilr=0
 
