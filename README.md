@@ -13,6 +13,13 @@ https://play.google.com/store/apps/details?id=aieco.light.mesh
 
 線上模式可透過 WebSocket relay 讓用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，用戶仍可透過藍芽 Mesh、同一個 WiFi、手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通的 LAN 進入同一個本地傳播頻道聊天。
 
+## 光網支援:
+Whatsapp https://wa.me/+85262112160
+LINE https://line.me/ti/p/7elEusTH6q
+
+## Whatsapp 防災預備與互助群組:
+https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm?s=cl&p=a&ilr=0
+
 ## 文件
 
 - [WebSocket Relay 生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：用 Nuxt 4 / Nitro 生成線上聊天 relay server。

@@ -7,17 +7,26 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text, Tooltip;
+import 'package:flutter/material.dart' as material show Text, Tooltip;
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'ui_translations.g.dart';
+
 const String _aiecoWebUrl = 'https://www.aieco.hk';
 const String _communityLifebuoyUrl = 'https://www.aieco.hk/community/lifebuoy';
 const String _communityWallUrl = 'https://www.aieco.hk/community/wall';
 const String _communityShareUrl = 'https://www.aieco.hk/community/share';
+const String whatsAppSupportUrl =
+    'https://wa.me/+85262112160?text=%E6%83%B3%E6%9F%A5%E8%A9%A2%E5%85%89%E7%B6%B2%E6%94%AF%E6%8F%B4';
+const String lineSupportUrl = 'https://line.me/ti/p/7elEusTH6q';
+const String whatsAppGroupUrl =
+    'https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm?s=cl&p=a&ilr=0';
 const String _communityNewsHost = 'www.aieco.hk';
 const String _communityNewsApiPath = '/api/blogs';
 const String _communityNewsCategory = 'community-info';
@@ -211,18 +220,278 @@ Future<void> _openExternalUrl(BuildContext context, String url) async {
   }
   ScaffoldMessenger.of(
     context,
-  ).showSnackBar(SnackBar(content: Text('未能打開連結，已複製：$url')));
+  ).showSnackBar(SnackBar(content: LocalizedText('未能打開連結，已複製：$url')));
 }
 
 enum MeshNetworkMode { online, offline }
 
 enum WifiTransportMode { bluetooth, wifi }
 
+enum AppLanguage { english, traditionalChinese, simplifiedChinese }
+
+AppLanguage _currentAppLanguage = AppLanguage.traditionalChinese;
+
+extension AppLanguageDetails on AppLanguage {
+  String get code => switch (this) {
+    AppLanguage.english => 'en',
+    AppLanguage.traditionalChinese => 'zh-Hant',
+    AppLanguage.simplifiedChinese => 'zh-Hans',
+  };
+
+  String get label => switch (this) {
+    AppLanguage.english => 'English',
+    AppLanguage.traditionalChinese => '繁體中文',
+    AppLanguage.simplifiedChinese => '简体中文',
+  };
+
+  static AppLanguage fromCode(String? code) => AppLanguage.values.firstWhere(
+    (language) => language.code == code,
+    orElse: () => AppLanguage.traditionalChinese,
+  );
+}
+
+class _AppLanguageScope extends InheritedWidget {
+  const _AppLanguageScope({
+    required this.language,
+    required this.onChanged,
+    required super.child,
+  });
+
+  final AppLanguage language;
+  final ValueChanged<AppLanguage> onChanged;
+
+  static _AppLanguageScope of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_AppLanguageScope>()!;
+
+  @override
+  bool updateShouldNotify(_AppLanguageScope oldWidget) =>
+      language != oldWidget.language;
+}
+
+String _tr(
+  BuildContext context,
+  String english,
+  String traditional,
+  String simplified,
+) {
+  return switch (_AppLanguageScope.of(context).language) {
+    AppLanguage.english => english,
+    AppLanguage.traditionalChinese => traditional,
+    AppLanguage.simplifiedChinese => simplified,
+  };
+}
+
+String _localizedUiText(String value, {AppLanguage? language}) {
+  final activeLanguage = language ?? _currentAppLanguage;
+  final adminTranslations = switch (activeLanguage) {
+    AppLanguage.english => _adminEnglishTranslations,
+    AppLanguage.simplifiedChinese => _adminSimplifiedTranslations,
+    AppLanguage.traditionalChinese => const <String, String>{},
+  };
+  final adminExact = adminTranslations[value];
+  if (adminExact != null) return adminExact;
+
+  final translations = switch (activeLanguage) {
+    AppLanguage.english => uiEnglishTranslations,
+    AppLanguage.simplifiedChinese => uiSimplifiedTranslations,
+    AppLanguage.traditionalChinese => const <String, String>{},
+  };
+  final exact = translations[value];
+  if (exact != null) return exact;
+
+  final patterns = switch (activeLanguage) {
+    AppLanguage.english => uiEnglishPatterns,
+    AppLanguage.simplifiedChinese => uiSimplifiedPatterns,
+    AppLanguage.traditionalChinese => const <UiTranslationPattern>[],
+  };
+  for (final entry in patterns) {
+    final match = entry.pattern.firstMatch(value);
+    if (match == null) continue;
+    var result = entry.replacement;
+    for (var index = 1; index <= match.groupCount; index += 1) {
+      result = result.replaceAll('@@$index@@', match.group(index) ?? '');
+    }
+    return result;
+  }
+  return value;
+}
+
+const Map<String, String> _adminEnglishTranslations = <String, String>{
+  'Admin 驗證': 'Admin verification',
+  'Admin 密碼': 'Admin password',
+  '驗證': 'Verify',
+  'Admin 密碼不正確。': 'Incorrect admin password.',
+  'Admin 管理': 'Admin management',
+  '管理留言、光團、物資及用戶禁言。': 'Manage comments, groups, supplies, and user muting.',
+  '開啟 Admin 管理': 'Open admin management',
+  '留言': 'Comments',
+  '目前沒有留言。': 'There are currently no comments.',
+  '刪除留言': 'Delete comment',
+  '目前沒有可刪除的光團。': 'There are currently no removable groups.',
+  '刪除光團': 'Delete group',
+  '目前沒有物資。': 'There are currently no supplies.',
+  '刪除物資': 'Delete supply',
+  '用戶禁言': 'User muting',
+  '目前沒有其他在線用戶。': 'There are currently no other online users.',
+  '已禁言': 'Muted',
+  '可發言': 'Can speak',
+  '你已被管理員禁言，暫時不能傳送訊息。':
+      'You have been muted by an admin and cannot send messages for now.',
+  '用戶支援': 'User support',
+  'WhatsApp 查詢': 'WhatsApp enquiry',
+  'LINE 聯絡': 'LINE contact',
+  'WhatsApp 群組': 'WhatsApp group',
+};
+
+const Map<String, String> _adminSimplifiedTranslations = <String, String>{
+  'Admin 驗證': 'Admin 验证',
+  'Admin 密碼': 'Admin 密码',
+  '驗證': '验证',
+  'Admin 密碼不正確。': 'Admin 密码不正确。',
+  'Admin 管理': 'Admin 管理',
+  '管理留言、光團、物資及用戶禁言。': '管理留言、光团、物资及用户禁言。',
+  '開啟 Admin 管理': '开启 Admin 管理',
+  '留言': '留言',
+  '目前沒有留言。': '目前没有留言。',
+  '刪除留言': '删除留言',
+  '目前沒有可刪除的光團。': '目前没有可删除的光团。',
+  '刪除光團': '删除光团',
+  '目前沒有物資。': '目前没有物资。',
+  '刪除物資': '删除物资',
+  '用戶禁言': '用户禁言',
+  '目前沒有其他在線用戶。': '目前没有其他在线用户。',
+  '已禁言': '已禁言',
+  '可發言': '可发言',
+  '你已被管理員禁言，暫時不能傳送訊息。': '你已被管理员禁言，暂时不能发送消息。',
+  '用戶支援': '用户支持',
+  'WhatsApp 查詢': 'WhatsApp 查询',
+  'LINE 聯絡': 'LINE 联系',
+  'WhatsApp 群組': 'WhatsApp 群组',
+};
+
+class LocalizedText extends StatelessWidget {
+  const LocalizedText(
+    this.data, {
+    super.key,
+    this.style,
+    this.strutStyle,
+    this.textAlign,
+    this.textDirection,
+    this.locale,
+    this.softWrap,
+    this.overflow,
+    this.textScaler,
+    this.maxLines,
+    this.semanticsLabel,
+    this.textWidthBasis,
+    this.textHeightBehavior,
+    this.selectionColor,
+  }) : textSpan = null;
+
+  const LocalizedText.rich(
+    this.textSpan, {
+    super.key,
+    this.style,
+    this.strutStyle,
+    this.textAlign,
+    this.textDirection,
+    this.locale,
+    this.softWrap,
+    this.overflow,
+    this.textScaler,
+    this.maxLines,
+    this.semanticsLabel,
+    this.textWidthBasis,
+    this.textHeightBehavior,
+    this.selectionColor,
+  }) : data = null;
+
+  final String? data;
+  final InlineSpan? textSpan;
+  final TextStyle? style;
+  final StrutStyle? strutStyle;
+  final TextAlign? textAlign;
+  final TextDirection? textDirection;
+  final Locale? locale;
+  final bool? softWrap;
+  final TextOverflow? overflow;
+  final TextScaler? textScaler;
+  final int? maxLines;
+  final String? semanticsLabel;
+  final TextWidthBasis? textWidthBasis;
+  final TextHeightBehavior? textHeightBehavior;
+  final Color? selectionColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final language = _AppLanguageScope.of(context).language;
+    final span = textSpan;
+    if (span != null) {
+      return material.Text.rich(
+        span,
+        style: style,
+        strutStyle: strutStyle,
+        textAlign: textAlign,
+        textDirection: textDirection,
+        locale: locale,
+        softWrap: softWrap,
+        overflow: overflow,
+        textScaler: textScaler,
+        maxLines: maxLines,
+        semanticsLabel: semanticsLabel == null
+            ? null
+            : _localizedUiText(semanticsLabel!, language: language),
+        textWidthBasis: textWidthBasis,
+        textHeightBehavior: textHeightBehavior,
+        selectionColor: selectionColor,
+      );
+    }
+    return material.Text(
+      _localizedUiText(data ?? '', language: language),
+      style: style,
+      strutStyle: strutStyle,
+      textAlign: textAlign,
+      textDirection: textDirection,
+      locale: locale,
+      softWrap: softWrap,
+      overflow: overflow,
+      textScaler: textScaler,
+      maxLines: maxLines,
+      semanticsLabel: semanticsLabel == null
+          ? null
+          : _localizedUiText(semanticsLabel!, language: language),
+      textWidthBasis: textWidthBasis,
+      textHeightBehavior: textHeightBehavior,
+      selectionColor: selectionColor,
+    );
+  }
+}
+
+class LocalizedTooltip extends StatelessWidget {
+  const LocalizedTooltip({
+    super.key,
+    required this.message,
+    required this.child,
+  });
+
+  final String message;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final language = _AppLanguageScope.of(context).language;
+    return material.Tooltip(
+      message: _localizedUiText(message, language: language),
+      child: child,
+    );
+  }
+}
+
 void main() {
   runApp(const PropagationLightApp(showLaunchScreen: true));
 }
 
-class PropagationLightApp extends StatelessWidget {
+class PropagationLightApp extends StatefulWidget {
   const PropagationLightApp({
     super.key,
     this.autoStart = true,
@@ -237,57 +506,102 @@ class PropagationLightApp extends StatelessWidget {
   final Future<void> Function()? onTermsDeclined;
 
   @override
+  State<PropagationLightApp> createState() => _PropagationLightAppState();
+}
+
+class _PropagationLightAppState extends State<PropagationLightApp> {
+  static const _languagePrefsKey = 'app.language';
+  AppLanguage _language = AppLanguage.traditionalChinese;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentAppLanguage = _language;
+    unawaited(_loadLanguage());
+  }
+
+  Future<void> _loadLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = AppLanguageDetails.fromCode(
+      prefs.getString(_languagePrefsKey),
+    );
+    _currentAppLanguage = saved;
+    if (mounted && saved != _language) {
+      setState(() => _language = saved);
+    }
+  }
+
+  void _setLanguage(AppLanguage language) {
+    if (language == _language) return;
+    _currentAppLanguage = language;
+    setState(() => _language = language);
+    unawaited(
+      SharedPreferences.getInstance().then(
+        (prefs) => prefs.setString(_languagePrefsKey, language.code),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     const seed = Color(0xFF0D7C66);
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: '傳播光 AIECO.HK',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.light,
-        ),
-        scaffoldBackgroundColor: const Color(0xFFF7F8F4),
-        appBarTheme: const AppBarTheme(
-          centerTitle: false,
-          elevation: 0,
-          backgroundColor: Color(0xFFF7F8F4),
-          foregroundColor: Color(0xFF17211E),
-        ),
-        cardTheme: CardThemeData(
-          color: Colors.white,
-          elevation: 0,
-          margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: const BorderSide(color: Color(0xFFE0E5DE)),
+    return _AppLanguageScope(
+      language: _language,
+      onChanged: _setLanguage,
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: switch (_language) {
+          AppLanguage.english => 'Propagation Light AIECO.HK',
+          AppLanguage.traditionalChinese => '傳播光 AIECO.HK',
+          AppLanguage.simplifiedChinese => '传播光 AIECO.HK',
+        },
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: seed,
+            brightness: Brightness.light,
           ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFD7DED7)),
+          scaffoldBackgroundColor: const Color(0xFFF7F8F4),
+          appBarTheme: const AppBarTheme(
+            centerTitle: false,
+            elevation: 0,
+            backgroundColor: Color(0xFFF7F8F4),
+            foregroundColor: Color(0xFF17211E),
           ),
-        ),
-        useMaterial3: true,
-      ),
-      home: showLaunchScreen
-          ? _LaunchGate(
-              child: PropagationLightHome(
-                autoStart: autoStart,
-                enableWebView: enableWebView,
-                onTermsDeclined: onTermsDeclined,
-              ),
-            )
-          : PropagationLightHome(
-              autoStart: autoStart,
-              enableWebView: enableWebView,
-              onTermsDeclined: onTermsDeclined,
+          cardTheme: CardThemeData(
+            color: Colors.white,
+            elevation: 0,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: const BorderSide(color: Color(0xFFE0E5DE)),
             ),
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFFD7DED7)),
+            ),
+          ),
+          useMaterial3: true,
+        ),
+        home: widget.showLaunchScreen
+            ? _LaunchGate(
+                child: PropagationLightHome(
+                  autoStart: widget.autoStart,
+                  enableWebView: widget.enableWebView,
+                  onTermsDeclined: widget.onTermsDeclined,
+                ),
+              )
+            : PropagationLightHome(
+                autoStart: widget.autoStart,
+                enableWebView: widget.enableWebView,
+                onTermsDeclined: widget.onTermsDeclined,
+              ),
+      ),
     );
   }
 }
@@ -455,18 +769,17 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
     unawaited(_syncBackgroundMeshState());
 
     if (state == AppLifecycleState.resumed && widget.autoStart) {
+      _mesh.setPresenceVisible(true);
       unawaited(_backgroundMesh.clearChatNotifications());
       unawaited(_refreshWirelessStatusAndRejoin(forceRejoin: true));
       unawaited(_locateRadar(force: true));
     } else if ((state == AppLifecycleState.inactive ||
             state == AppLifecycleState.paused ||
             state == AppLifecycleState.hidden) &&
-        widget.autoStart &&
-        _mesh.isRunning) {
-      // Refresh the LAN addresses and announce immediately before Android/iOS
-      // applies background scheduling limits. The Android foreground service
-      // then keeps the Wi-Fi and multicast path awake.
-      unawaited(_mesh.refreshNetworkPresence());
+        widget.autoStart) {
+      // Keep the transport available for background messages, but do not show
+      // a user who has left the app as online on other devices.
+      _mesh.setPresenceVisible(false);
     }
   }
 
@@ -614,19 +927,19 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('刪除本機帳號與資料？'),
-          content: const Text(
+          title: const LocalizedText('刪除本機帳號與資料？'),
+          content: const LocalizedText(
             '這會停止光之網絡，刪除本機光點身份、光點名稱、用戶名稱、條款狀態、封鎖名單、隱藏訊息、舉報記錄、目前訊息、物資和定位快取，並建立新的匿名光點身份。刪除帳號功能 1 天內只可使用 1 次。',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('取消'),
+              child: const LocalizedText('取消'),
             ),
             FilledButton.icon(
               onPressed: () => Navigator.of(dialogContext).pop(true),
               icon: const Icon(Icons.delete_forever),
-              label: const Text('刪除'),
+              label: const LocalizedText('刪除'),
             ),
           ],
         );
@@ -655,7 +968,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_mesh.status),
+        content: LocalizedText(_mesh.status),
         duration: const Duration(seconds: 4),
       ),
     );
@@ -666,12 +979,12 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('暫時不能刪除帳號'),
-          content: Text(_mesh.status),
+          title: const LocalizedText('暫時不能刪除帳號'),
+          content: LocalizedText(_mesh.status),
           actions: [
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('知道'),
+              child: const LocalizedText('知道'),
             ),
           ],
         );
@@ -715,17 +1028,17 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('封鎖用戶？'),
-          content: Text('封鎖 $userName 後，對方的訊息、物資和定位會立即從你的信息流隱藏。'),
+          title: const LocalizedText('封鎖用戶？'),
+          content: LocalizedText('封鎖 $userName 後，對方的訊息、物資和定位會立即從你的信息流隱藏。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('取消'),
+              child: const LocalizedText('取消'),
             ),
             FilledButton.icon(
               onPressed: () => Navigator.of(dialogContext).pop(true),
               icon: const Icon(Icons.block),
-              label: const Text('封鎖'),
+              label: const LocalizedText('封鎖'),
             ),
           ],
         );
@@ -762,7 +1075,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_mesh.status),
+        content: LocalizedText(_mesh.status),
         duration: const Duration(seconds: 4),
       ),
     );
@@ -821,13 +1134,13 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
             }
 
             return AlertDialog(
-              title: const Text('建立光團'),
+              title: const LocalizedText('建立光團'),
               content: TextField(
                 key: const ValueKey('room-name-input'),
                 autofocus: true,
                 textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(
-                  labelText: '光團名稱',
+                decoration: InputDecoration(
+                  labelText: _localizedUiText('光團名稱'),
                   prefixIcon: Icon(Icons.groups_outlined),
                 ),
                 onChanged: (value) => setDialogState(() => draftName = value),
@@ -836,12 +1149,12 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消'),
+                  child: const LocalizedText('取消'),
                 ),
                 FilledButton.icon(
                   onPressed: canCreate ? () => submit(cleanName) : null,
                   icon: const Icon(Icons.add),
-                  label: const Text('建立'),
+                  label: const LocalizedText('建立'),
                 ),
               ],
             );
@@ -892,7 +1205,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
             }
 
             return AlertDialog(
-              title: const Text('分享物資'),
+              title: const LocalizedText('分享物資'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -900,8 +1213,8 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                     key: const ValueKey('supply-title-input'),
                     autofocus: true,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: '物資名稱',
+                    decoration: InputDecoration(
+                      labelText: _localizedUiText('物資名稱'),
                       prefixIcon: Icon(Icons.inventory_2_outlined),
                     ),
                     onChanged: (value) => setDialogState(() => title = value),
@@ -910,8 +1223,8 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                   TextField(
                     key: const ValueKey('supply-quantity-input'),
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: '數量 / 狀態',
+                    decoration: InputDecoration(
+                      labelText: _localizedUiText('數量 / 狀態'),
                       prefixIcon: Icon(Icons.format_list_numbered),
                     ),
                     onChanged: (value) =>
@@ -923,8 +1236,8 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                     minLines: 2,
                     maxLines: 3,
                     textInputAction: TextInputAction.done,
-                    decoration: const InputDecoration(
-                      labelText: '備註 / 交收位置',
+                    decoration: InputDecoration(
+                      labelText: _localizedUiText('備註 / 交收位置'),
                       prefixIcon: Icon(Icons.place_outlined),
                     ),
                     onChanged: (value) => setDialogState(() => note = value),
@@ -935,12 +1248,12 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消'),
+                  child: const LocalizedText('取消'),
                 ),
                 FilledButton.icon(
                   onPressed: canShare ? submit : null,
                   icon: const Icon(Icons.volunteer_activism_outlined),
-                  label: const Text('分享'),
+                  label: const LocalizedText('分享'),
                 ),
               ],
             );
@@ -1428,14 +1741,14 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                 child: Icon(icon, color: color),
               ),
               const SizedBox(width: 10),
-              Expanded(child: Text(title)),
+              Expanded(child: LocalizedText(title)),
             ],
           ),
-          content: Text(content),
+          content: LocalizedText(content),
           actions: [
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('知道'),
+              child: const LocalizedText('知道'),
             ),
           ],
         );
@@ -1457,12 +1770,18 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
               onOpenAccountPrivacy: _openAccountPrivacyCenter,
             ),
             actions: [
+              const _LanguageMenu(),
               IconButton(
                 tooltip: _mesh.isRunning
-                    ? '停止節點'
+                    ? _tr(context, 'Stop node', '停止節點', '停止节点')
                     : _mesh.networkMode == MeshNetworkMode.online
-                    ? '啟動線上光網'
-                    : '啟動離線節點',
+                    ? _tr(
+                        context,
+                        'Start online light network',
+                        '啟動線上光網',
+                        '启动在线光网',
+                      )
+                    : _tr(context, 'Start offline node', '啟動離線節點', '启动离线节点'),
                 onPressed: () => unawaited(_togglePropagationLight()),
                 icon: Icon(
                   _mesh.isRunning
@@ -1473,7 +1792,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                 ),
               ),
               IconButton(
-                tooltip: '功能介紹',
+                tooltip: _tr(context, 'Feature guide', '功能介紹', '功能介绍'),
                 onPressed: _openFeatureGuide,
                 icon: const Icon(Icons.info_outline),
               ),
@@ -1484,11 +1803,23 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
             ],
             bottom: TabBar(
               controller: _tabController,
-              tabs: const [
-                Tab(icon: Icon(Icons.hub_outlined), text: '光之網絡'),
-                Tab(icon: Icon(Icons.forum_outlined), text: '光之通道'),
-                Tab(icon: Icon(Icons.radar), text: '光之雷達'),
-                Tab(icon: Icon(Icons.public), text: '社區資訊'),
+              tabs: [
+                Tab(
+                  icon: const Icon(Icons.hub_outlined),
+                  text: _tr(context, 'Network', '光之網絡', '光之网络'),
+                ),
+                Tab(
+                  icon: const Icon(Icons.forum_outlined),
+                  text: _tr(context, 'Channel', '光之通道', '光之通道'),
+                ),
+                Tab(
+                  icon: const Icon(Icons.radar),
+                  text: _tr(context, 'Radar', '光之雷達', '光之雷达'),
+                ),
+                Tab(
+                  icon: const Icon(Icons.public),
+                  text: _tr(context, 'Community', '社區資訊', '社区资讯'),
+                ),
               ],
             ),
           ),
@@ -1555,6 +1886,48 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
   }
 }
 
+class _LanguageMenu extends StatelessWidget {
+  const _LanguageMenu();
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = _AppLanguageScope.of(context);
+    return PopupMenuButton<AppLanguage>(
+      key: const ValueKey('language-menu'),
+      initialValue: scope.language,
+      tooltip: _tr(context, 'Language', '語言', '语言'),
+      constraints: const BoxConstraints(minWidth: 240, maxWidth: 320),
+      onSelected: scope.onChanged,
+      icon: const Icon(Icons.language),
+      itemBuilder: (context) => AppLanguage.values
+          .map(
+            (language) => PopupMenuItem<AppLanguage>(
+              value: language,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    child: language == scope.language
+                        ? const Icon(Icons.check, size: 18)
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: material.Text(
+                      language.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
 class _AppHeaderTitle extends StatelessWidget {
   const _AppHeaderTitle({
     required this.displayName,
@@ -1573,8 +1946,9 @@ class _AppHeaderTitle extends StatelessWidget {
       displayName: displayName,
     );
 
-    return Tooltip(
-      message: '帳號與私隱 · 光之身份證 · $identityName',
+    return LocalizedTooltip(
+      message:
+          '${_tr(context, 'Account & privacy · Light ID', '帳號與私隱 · 光之身份證', '账号与隐私 · 光之身份证')} · $identityName',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -1619,7 +1993,7 @@ class _AppHeaderTitle extends StatelessWidget {
                           color: Color(0xFF0D7C66),
                         ),
                         SizedBox(height: 1),
-                        Text(
+                        LocalizedText(
                           'ID',
                           style: TextStyle(
                             color: Color(0xFF0D7C66),
@@ -1636,11 +2010,11 @@ class _AppHeaderTitle extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Row(
+                        Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                '傳播光',
+                              child: LocalizedText(
+                                _tr(context, 'Propagation Light', '傳播光', '传播光'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -1655,8 +2029,8 @@ class _AppHeaderTitle extends StatelessWidget {
                             SizedBox(width: 5),
                           ],
                         ),
-                        const Text(
-                          '光之身份證',
+                        LocalizedText(
+                          _tr(context, 'Light ID', '光之身份證', '光之身份证'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -1668,7 +2042,7 @@ class _AppHeaderTitle extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
+                        LocalizedText(
                           userName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1680,7 +2054,7 @@ class _AppHeaderTitle extends StatelessWidget {
                             letterSpacing: 0,
                           ),
                         ),
-                        Text(
+                        LocalizedText(
                           displayName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1723,13 +2097,21 @@ class _NetworkTabPage extends StatelessWidget {
     if (isWide) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        child: Row(
+        child: Column(
           children: [
-            SizedBox(width: 320, child: sidePanel),
-            if (wifiPanel != null) ...[
-              const SizedBox(width: 16),
-              Expanded(child: wifiPanel!),
-            ],
+            const _NetworkSupportRow(),
+            const SizedBox(height: 10),
+            Expanded(
+              child: Row(
+                children: [
+                  SizedBox(width: 320, child: sidePanel),
+                  if (wifiPanel != null) ...[
+                    const SizedBox(width: 16),
+                    Expanded(child: wifiPanel!),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       );
@@ -1739,9 +2121,74 @@ class _NetworkTabPage extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
       child: ListView(
         children: [
+          const _NetworkSupportRow(),
+          const SizedBox(height: 12),
           sidePanel,
           if (wifiPanel != null) ...[const SizedBox(height: 12), wifiPanel!],
         ],
+      ),
+    );
+  }
+}
+
+class _NetworkSupportRow extends StatelessWidget {
+  const _NetworkSupportRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final language = _AppLanguageScope.of(context).language;
+    return Card(
+      key: const ValueKey('network-user-support'),
+      child: SizedBox(
+        height: 58,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.support_agent, color: Color(0xFF0D7C66)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: LocalizedText(
+                  '用戶支援',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton.filledTonal(
+                key: const ValueKey('whatsapp-support-button'),
+                tooltip: _localizedUiText('WhatsApp 查詢', language: language),
+                onPressed: () =>
+                    unawaited(_openExternalUrl(context, whatsAppSupportUrl)),
+                icon: const FaIcon(
+                  FontAwesomeIcons.whatsapp,
+                  color: Color(0xFF25D366),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton.filledTonal(
+                key: const ValueKey('line-support-button'),
+                tooltip: _localizedUiText('LINE 聯絡', language: language),
+                onPressed: () =>
+                    unawaited(_openExternalUrl(context, lineSupportUrl)),
+                icon: const FaIcon(
+                  FontAwesomeIcons.line,
+                  color: Color(0xFF06C755),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton.filledTonal(
+                key: const ValueKey('whatsapp-group-button'),
+                tooltip: _localizedUiText('WhatsApp 群組', language: language),
+                onPressed: () =>
+                    unawaited(_openExternalUrl(context, whatsAppGroupUrl)),
+                icon: const Icon(Icons.groups_outlined),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1826,7 +2273,7 @@ class _CommunityInfoTabPage extends StatelessWidget {
                         _openExternalUrl(context, _lightMeshTutorialUrl),
                       ),
                       icon: const Icon(Icons.play_circle_outline, size: 20),
-                      label: const Text('光網連接教學影片'),
+                      label: const LocalizedText('光網連接教學影片'),
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF0D7C66),
                         foregroundColor: Colors.white,
@@ -1958,7 +2405,7 @@ class _CommunityInfoTabPage extends StatelessWidget {
                       action: FilledButton.icon(
                         onPressed: () => unawaited(_openAedMap(context)),
                         icon: const Icon(Icons.pin_drop_outlined, size: 18),
-                        label: const Text('AED 地圖'),
+                        label: const LocalizedText('AED 地圖'),
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0xFF880E4F),
                           foregroundColor: Colors.white,
@@ -2025,7 +2472,7 @@ class _CommunityInfoHeader extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  LocalizedText(
                     '黃大仙離線互助及災害自救資料',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: Colors.white,
@@ -2034,7 +2481,7 @@ class _CommunityInfoHeader extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 5),
-                  Text(
+                  LocalizedText(
                     '給網絡中斷、長者或需要紙本指引時使用。生命危險、火警、昏迷、胸痛、嚴重出血，先致電 999。',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: const Color(0xFFE5F2EE),
@@ -2137,7 +2584,7 @@ class _CommunityLinkTile extends StatelessWidget {
                 child: Icon(icon, color: color, size: 20),
               ),
               const SizedBox(height: 7),
-              Text(
+              LocalizedText(
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -2149,7 +2596,7 @@ class _CommunityLinkTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              Text(
+              LocalizedText(
                 body,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -2231,7 +2678,7 @@ class _CommunityNewsSectionState extends State<_CommunityNewsSection> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
+                  child: LocalizedText(
                     '社區最新消息',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       color: _communityInfoInk,
@@ -2240,7 +2687,7 @@ class _CommunityNewsSectionState extends State<_CommunityNewsSection> {
                   ),
                 ),
                 IconButton(
-                  tooltip: '重新整理',
+                  tooltip: _localizedUiText('重新整理'),
                   onPressed: _refresh,
                   icon: const Icon(Icons.refresh),
                 ),
@@ -2293,14 +2740,14 @@ class _CommunityNewsSectionState extends State<_CommunityNewsSection> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Text(
+                        LocalizedText(
                           '第 ${page + 1} / $pageCount 頁 · ${items.length} 條',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: _communityInfoMuted),
                         ),
                         const Spacer(),
                         IconButton.outlined(
-                          tooltip: '上一頁',
+                          tooltip: _localizedUiText('上一頁'),
                           onPressed: page == 0
                               ? null
                               : () => setState(() => _page = page - 1),
@@ -2308,7 +2755,7 @@ class _CommunityNewsSectionState extends State<_CommunityNewsSection> {
                         ),
                         const SizedBox(width: 8),
                         IconButton.outlined(
-                          tooltip: '下一頁',
+                          tooltip: _localizedUiText('下一頁'),
                           onPressed: page >= pageCount - 1
                               ? null
                               : () => setState(() => _page = page + 1),
@@ -2348,7 +2795,7 @@ class _CommunityNewsMessage extends StatelessWidget {
           Icon(icon, color: _communityInfoMuted, size: 20),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
+            child: LocalizedText(
               message,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: _communityInfoMuted,
@@ -2398,7 +2845,7 @@ class _CommunityNewsTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    LocalizedText(
                       item.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -2410,7 +2857,7 @@ class _CommunityNewsTile extends StatelessWidget {
                     ),
                     if (item.summary.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
+                      LocalizedText(
                         item.summary,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -2422,7 +2869,7 @@ class _CommunityNewsTile extends StatelessWidget {
                     ],
                     if (item.dateLabel.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
+                      LocalizedText(
                         item.dateLabel,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: const Color(0xFF7A8A82),
@@ -2480,7 +2927,7 @@ class _CommunityNewsArticlePageState extends State<_CommunityNewsArticlePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.item.title)),
+      appBar: AppBar(title: LocalizedText(widget.item.title)),
       body: FutureBuilder<_CommunityNewsArticle>(
         future: _future,
         builder: (context, snapshot) {
@@ -2501,7 +2948,7 @@ class _CommunityNewsArticlePageState extends State<_CommunityNewsArticlePage> {
                       size: 34,
                     ),
                     const SizedBox(height: 10),
-                    Text(
+                    LocalizedText(
                       _communityNewsErrorMessage(snapshot.error),
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -2513,7 +2960,7 @@ class _CommunityNewsArticlePageState extends State<_CommunityNewsArticlePage> {
                     FilledButton.icon(
                       onPressed: _retry,
                       icon: const Icon(Icons.refresh),
-                      label: const Text('重試'),
+                      label: const LocalizedText('重試'),
                     ),
                   ],
                 ),
@@ -2523,7 +2970,7 @@ class _CommunityNewsArticlePageState extends State<_CommunityNewsArticlePage> {
 
           final article = snapshot.data;
           if (article == null) {
-            return const Center(child: Text('未能讀取文章。'));
+            return const Center(child: LocalizedText('未能讀取文章。'));
           }
           return _CommunityNewsArticleWebView(article: article);
         },
@@ -3111,7 +3558,7 @@ class _CommunityHighlightTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  LocalizedText(
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -3122,7 +3569,7 @@ class _CommunityHighlightTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
+                  LocalizedText(
                     body,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -3195,7 +3642,7 @@ class _InfoCard extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.only(top: 7),
-                      child: Text(
+                      child: LocalizedText(
                         title,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           color: _communityInfoInk,
@@ -3258,7 +3705,7 @@ class _InfoCardRow extends StatelessWidget {
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                child: Text(
+                child: LocalizedText(
                   label,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -3273,7 +3720,7 @@ class _InfoCardRow extends StatelessWidget {
           const SizedBox(width: 10),
         ],
         Expanded(
-          child: Text(
+          child: LocalizedText(
             row.$2,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: _communityInfoMuted,
@@ -3308,7 +3755,7 @@ class _EulaAgreementDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('最終用戶許可協議'),
+      title: const LocalizedText('最終用戶許可協議'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
         child: const SingleChildScrollView(
@@ -3318,12 +3765,12 @@ class _EulaAgreementDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('不同意並關閉'),
+          child: const LocalizedText('不同意並關閉'),
         ),
         FilledButton.icon(
           onPressed: () => Navigator.of(context).pop(true),
           icon: const Icon(Icons.verified_user_outlined),
-          label: const Text('我同意'),
+          label: const LocalizedText('我同意'),
         ),
       ],
     );
@@ -3369,15 +3816,15 @@ class _UserNameEditDialogState extends State<_UserNameEditDialog> {
     final canSave = _draftName.trim().isNotEmpty;
 
     return AlertDialog(
-      title: const Text('更改用戶名稱'),
+      title: const LocalizedText('更改用戶名稱'),
       content: TextField(
         key: const ValueKey('quick-user-name-input'),
         controller: _controller,
         autofocus: true,
         maxLength: MeshChatService._maxUserNameLength,
         textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(
-          labelText: '用戶名稱',
+        decoration: InputDecoration(
+          labelText: _localizedUiText('用戶名稱'),
           prefixIcon: Icon(Icons.person_outline),
           counterText: '',
         ),
@@ -3387,12 +3834,12 @@ class _UserNameEditDialogState extends State<_UserNameEditDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: const LocalizedText('取消'),
         ),
         FilledButton.icon(
           onPressed: canSave ? _submit : null,
           icon: const Icon(Icons.save_outlined),
-          label: const Text('儲存'),
+          label: const LocalizedText('儲存'),
         ),
       ],
     );
@@ -3414,6 +3861,8 @@ class _AccountPrivacySheet extends StatefulWidget {
 
 class _AccountPrivacySheetState extends State<_AccountPrivacySheet> {
   late final TextEditingController _userNameController;
+  var _adminTapCount = 0;
+  var _adminUnlocked = false;
 
   @override
   void initState() {
@@ -3438,9 +3887,75 @@ class _AccountPrivacySheetState extends State<_AccountPrivacySheet> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(widget.mesh.status),
+        content: LocalizedText(widget.mesh.status),
         duration: const Duration(seconds: 3),
       ),
+    );
+  }
+
+  void _handleAdminTap() {
+    if (_adminUnlocked) {
+      _openAdminPanel();
+      return;
+    }
+    _adminTapCount += 1;
+    if (_adminTapCount < 7) return;
+    _adminTapCount = 0;
+    unawaited(_showAdminLogin());
+  }
+
+  Future<void> _showAdminLogin() async {
+    var password = '';
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const LocalizedText('Admin 驗證'),
+        content: TextField(
+          key: const ValueKey('admin-password-input'),
+          autofocus: true,
+          obscureText: true,
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            labelText: _localizedUiText('Admin 密碼'),
+            prefixIcon: const Icon(Icons.admin_panel_settings_outlined),
+          ),
+          onChanged: (value) => password = value,
+          onSubmitted: (_) => Navigator.of(
+            dialogContext,
+          ).pop(password.trim() == MeshChatService.adminPasswordForNow()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const LocalizedText('取消'),
+          ),
+          FilledButton(
+            key: const ValueKey('admin-login-button'),
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(password.trim() == MeshChatService.adminPasswordForNow()),
+            child: const LocalizedText('驗證'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (accepted == true) {
+      setState(() => _adminUnlocked = true);
+      _openAdminPanel();
+    } else if (accepted == false) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: LocalizedText('Admin 密碼不正確。')));
+    }
+  }
+
+  void _openAdminPanel() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _AdminPanel(mesh: widget.mesh),
     );
   }
 
@@ -3480,13 +3995,18 @@ class _AccountPrivacySheetState extends State<_AccountPrivacySheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '帳號與私隱',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w900),
+                          GestureDetector(
+                            key: const ValueKey('account-privacy-title'),
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _handleAdminTap,
+                            child: LocalizedText(
+                              '帳號與私隱',
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w900),
+                            ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
+                          LocalizedText(
                             '目前身份：${mesh.identityName}',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: const Color(0xFF566B60)),
@@ -3497,6 +4017,18 @@ class _AccountPrivacySheetState extends State<_AccountPrivacySheet> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                if (_adminUnlocked)
+                  _SafetyStatusCard(
+                    icon: Icons.admin_panel_settings_outlined,
+                    title: 'Admin 管理',
+                    body: '管理留言、光團、物資及用戶禁言。',
+                    child: FilledButton.icon(
+                      key: const ValueKey('open-admin-panel-button'),
+                      onPressed: _openAdminPanel,
+                      icon: const Icon(Icons.admin_panel_settings),
+                      label: const LocalizedText('開啟 Admin 管理'),
+                    ),
+                  ),
                 _SafetyStatusCard(
                   icon: Icons.badge_outlined,
                   title: '本機匿名帳號',
@@ -3514,8 +4046,8 @@ class _AccountPrivacySheetState extends State<_AccountPrivacySheet> {
                         controller: _userNameController,
                         maxLength: MeshChatService._maxUserNameLength,
                         textInputAction: TextInputAction.done,
-                        decoration: const InputDecoration(
-                          labelText: '用戶名稱',
+                        decoration: InputDecoration(
+                          labelText: _localizedUiText('用戶名稱'),
                           prefixIcon: Icon(Icons.person_outline),
                           counterText: '',
                         ),
@@ -3531,11 +4063,11 @@ class _AccountPrivacySheetState extends State<_AccountPrivacySheet> {
                             key: const ValueKey('save-user-name-button'),
                             onPressed: _saveUserName,
                             icon: const Icon(Icons.save_outlined),
-                            label: const Text('儲存用戶名稱'),
+                            label: const LocalizedText('儲存用戶名稱'),
                           ),
                           Chip(
                             avatar: const Icon(Icons.lock_outline, size: 16),
-                            label: Text('光點名稱：${mesh.displayName}'),
+                            label: LocalizedText('光點名稱：${mesh.displayName}'),
                             side: const BorderSide(color: Color(0xFFD7DED7)),
                             backgroundColor: const Color(0xFFFAFBF7),
                             visualDensity: VisualDensity.compact,
@@ -3566,7 +4098,7 @@ class _AccountPrivacySheetState extends State<_AccountPrivacySheet> {
                       ),
                       onPressed: () => unawaited(widget.onDeleteAccount()),
                       icon: const Icon(Icons.delete_forever),
-                      label: const Text('刪除本機帳號與資料'),
+                      label: const LocalizedText('刪除本機帳號與資料'),
                     ),
                   ),
                 ),
@@ -3584,6 +4116,186 @@ class _AccountPrivacySheetState extends State<_AccountPrivacySheet> {
           ),
         );
       },
+    );
+  }
+}
+
+class _AdminPanel extends StatelessWidget {
+  const _AdminPanel({required this.mesh});
+
+  final MeshChatService mesh;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListenableBuilder(
+        listenable: mesh,
+        builder: (context, _) {
+          final messages = mesh.messages.reversed.toList();
+          final rooms = mesh.rooms
+              .where((room) => room.id != MeshChatService._defaultRoomId)
+              .toList();
+          final supplies = mesh.supplies;
+          final users = mesh.onlineUsers.where((user) => !user.isMe).toList();
+          return ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+            ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.admin_panel_settings,
+                      color: Color(0xFFB3261E),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: LocalizedText(
+                        'Admin 管理',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _AdminExpansion(
+                  key: const ValueKey('admin-messages-section'),
+                  icon: Icons.chat_outlined,
+                  title: '留言',
+                  count: messages.length,
+                  emptyText: '目前沒有留言。',
+                  children: messages
+                      .map(
+                        (message) => ListTile(
+                          dense: true,
+                          title: LocalizedText(
+                            message.text,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: LocalizedText(
+                            '${message.senderName} · ${message.roomName}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: IconButton(
+                            key: ValueKey('admin-delete-message-${message.id}'),
+                            tooltip: _localizedUiText('刪除留言'),
+                            onPressed: () =>
+                                mesh.adminDeleteMessage(message.id),
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                _AdminExpansion(
+                  key: const ValueKey('admin-rooms-section'),
+                  icon: Icons.groups_outlined,
+                  title: '光團',
+                  count: rooms.length,
+                  emptyText: '目前沒有可刪除的光團。',
+                  children: rooms
+                      .map(
+                        (room) => ListTile(
+                          dense: true,
+                          title: LocalizedText(room.name),
+                          trailing: IconButton(
+                            key: ValueKey('admin-delete-room-${room.id}'),
+                            tooltip: _localizedUiText('刪除光團'),
+                            onPressed: () => mesh.adminDeleteRoom(room.id),
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                _AdminExpansion(
+                  key: const ValueKey('admin-supplies-section'),
+                  icon: Icons.inventory_2_outlined,
+                  title: '物資',
+                  count: supplies.length,
+                  emptyText: '目前沒有物資。',
+                  children: supplies
+                      .map(
+                        (supply) => ListTile(
+                          dense: true,
+                          title: LocalizedText(supply.title),
+                          subtitle: LocalizedText(supply.offeredByName),
+                          trailing: IconButton(
+                            key: ValueKey('admin-delete-supply-${supply.id}'),
+                            tooltip: _localizedUiText('刪除物資'),
+                            onPressed: () => mesh.adminDeleteSupply(supply.id),
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                _AdminExpansion(
+                  key: const ValueKey('admin-users-section'),
+                  icon: Icons.person_off_outlined,
+                  title: '用戶禁言',
+                  count: users.length,
+                  emptyText: '目前沒有其他在線用戶。',
+                  children: users.map((user) {
+                    final muted = mesh.isUserMuted(user.id);
+                    return SwitchListTile(
+                      key: ValueKey('admin-mute-user-${user.id}'),
+                      dense: true,
+                      title: LocalizedText(user.name),
+                      subtitle: LocalizedText(muted ? '已禁言' : '可發言'),
+                      value: muted,
+                      onChanged: (value) =>
+                          mesh.adminSetUserMuted(user.id, muted: value),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AdminExpansion extends StatelessWidget {
+  const _AdminExpansion({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.count,
+    required this.emptyText,
+    required this.children,
+  });
+
+  final IconData icon;
+  final String title;
+  final int count;
+  final String emptyText;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      leading: Icon(icon),
+      title: LocalizedText('${_localizedUiText(title)} ($count)'),
+      children: children.isEmpty
+          ? [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: LocalizedText(emptyText),
+                ),
+              ),
+            ]
+          : children,
     );
   }
 }
@@ -3634,13 +4346,13 @@ class _ChatSafetySheet extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          LocalizedText(
                             '聊天安全與舉報',
                             style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(fontWeight: FontWeight.w900),
                           ),
                           const SizedBox(height: 4),
-                          Text(
+                          LocalizedText(
                             '條款狀態：$acceptedLabel',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: const Color(0xFF566B60)),
@@ -3655,7 +4367,7 @@ class _ChatSafetySheet extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: onAcceptTerms,
                     icon: const Icon(Icons.verified_user_outlined),
-                    label: const Text('同意最終用戶許可協議'),
+                    label: const LocalizedText('同意最終用戶許可協議'),
                   ),
                 if (!mesh.eulaAccepted) const SizedBox(height: 12),
                 const _SafetyPolicyText(showContact: true),
@@ -3714,7 +4426,7 @@ class _ChatSafetySheet extends StatelessWidget {
     mesh.unblockUser(user.id, userName: user.name);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(mesh.status),
+        content: LocalizedText(mesh.status),
         duration: const Duration(seconds: 4),
       ),
     );
@@ -3763,20 +4475,20 @@ class _BlockedUserRow extends StatelessWidget {
       key: ValueKey('blocked-user-${user.id}'),
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.person_off_outlined),
-      title: Text(
+      title: LocalizedText(
         user.name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontWeight: FontWeight.w800),
       ),
       subtitle: showId
-          ? Text(user.id, maxLines: 1, overflow: TextOverflow.ellipsis)
+          ? LocalizedText(user.id, maxLines: 1, overflow: TextOverflow.ellipsis)
           : null,
       trailing: TextButton.icon(
         key: ValueKey('unblock-user-${user.id}'),
         onPressed: () => onUnblockUser(user),
         icon: const Icon(Icons.lock_open, size: 18),
-        label: const Text('解鎖'),
+        label: const LocalizedText('解鎖'),
       ),
     );
   }
@@ -3793,7 +4505,7 @@ class _SafetyPolicyText extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
+        LocalizedText(
           '傳播光對不良內容和惡意用戶採取零容忍政策。',
           style: Theme.of(
             context,
@@ -3816,7 +4528,7 @@ class _SafetyPolicyText extends StatelessWidget {
         const _SafetyPolicyBullet(text: '你可以舉報訊息或用戶、封鎖或解鎖用戶，並立即從信息流刪除不想看到的帖子。'),
         if (showContact) ...[
           const SizedBox(height: 8),
-          Text(
+          LocalizedText(
             '舉報不當行為：$_moderationContactEmail',
             style: Theme.of(
               context,
@@ -3854,7 +4566,7 @@ class _SafetyPolicyBullet extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
+            child: LocalizedText(
               text,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: const Color(0xFF4B5F56),
@@ -3902,14 +4614,14 @@ class _SafetyStatusCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    LocalizedText(
                       title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    LocalizedText(
                       body,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: const Color(0xFF4B5F56),
@@ -3951,7 +4663,7 @@ class _ReportContentDialogState extends State<_ReportContentDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.title),
+      title: LocalizedText(widget.title),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
@@ -3959,7 +4671,7 @@ class _ReportContentDialogState extends State<_ReportContentDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              LocalizedText(
                 widget.targetLabel,
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
@@ -3970,13 +4682,16 @@ class _ReportContentDialogState extends State<_ReportContentDialog> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _reason,
-                decoration: const InputDecoration(
-                  labelText: '舉報原因',
+                decoration: InputDecoration(
+                  labelText: _localizedUiText('舉報原因'),
                   prefixIcon: Icon(Icons.flag_outlined),
                 ),
                 items: [
                   for (final reason in _moderationReportReasons)
-                    DropdownMenuItem(value: reason, child: Text(reason)),
+                    DropdownMenuItem(
+                      value: reason,
+                      child: LocalizedText(reason),
+                    ),
                 ],
                 onChanged: (value) {
                   if (value != null) {
@@ -3989,13 +4704,13 @@ class _ReportContentDialogState extends State<_ReportContentDialog> {
                 controller: _detailController,
                 minLines: 2,
                 maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: '補充資料（選填）',
+                decoration: InputDecoration(
+                  labelText: _localizedUiText('補充資料（選填）'),
                   prefixIcon: Icon(Icons.notes_outlined),
                 ),
               ),
               const SizedBox(height: 10),
-              Text(
+              LocalizedText(
                 '舉報會儲存在本機記錄；開發者收到 app 內記錄或電郵後會在 $_moderationResponseWindow 內處理。',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: const Color(0xFF566B60),
@@ -4009,7 +4724,7 @@ class _ReportContentDialogState extends State<_ReportContentDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: const LocalizedText('取消'),
         ),
         FilledButton.icon(
           onPressed: () {
@@ -4021,7 +4736,7 @@ class _ReportContentDialogState extends State<_ReportContentDialog> {
             );
           },
           icon: const Icon(Icons.flag_outlined),
-          label: const Text('提交舉報'),
+          label: const LocalizedText('提交舉報'),
         ),
       ],
     );
@@ -4043,11 +4758,11 @@ class _FeatureGuideSheet extends StatelessWidget {
           title: '光之網絡',
           description:
               '傳播光是一個線上 / 離線光之網絡聊天工具。線上模式透過 WebSocket relay，'
-              '用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，仍可在同一個 WiFi、'
+              '用戶入 APP 即可聊天，不需要連同一個 WiFi；沒有外網時，仍可在同一個 WiFi、藍芽Mesh、'
               '手機熱點、Wi-Fi Direct group、OpenWrt mesh 或其他已互通 LAN 進入同一個本地傳播頻道。',
           items: [
             '線上光網：連接已設定的 relay，聊天、光團、物資、信用和定位會同步給其他線上光點。',
-            '離線 mesh：開啟 WiFi 後，APP 會用 LAN 自動尋找附近節點，並用 TCP 傳送訊息。',
+            '離線 mesh：開啟 WiFi / 藍芽後，APP 會用 LAN 自動尋找附近節點，並用 TCP 傳送訊息。',
             '多 hop 傳播：節點收到新訊息後會繼續向其他已知節點轉發。',
             '連接方式：同一 WiFi、手機熱點、Wi-Fi Direct group 或 OpenWrt mesh。',
           ],
@@ -4121,14 +4836,14 @@ class _FeatureGuideHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              LocalizedText(
                 '功能介紹',
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 4),
-              Text(
+              LocalizedText(
                 '線上可即入即聊，離線可在同一 LAN 內建立本地傳播頻道。',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: const Color(0xFF4B5F56),
@@ -4175,7 +4890,7 @@ class _FeatureGuideSection extends StatelessWidget {
                   Icon(icon, color: const Color(0xFF0D7C66)),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
+                    child: LocalizedText(
                       title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w900,
@@ -4185,7 +4900,7 @@ class _FeatureGuideSection extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Text(
+              LocalizedText(
                 description,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: const Color(0xFF4B5F56),
@@ -4227,7 +4942,7 @@ class _FeatureGuideBullet extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
+            child: LocalizedText(
               text,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: const Color(0xFF34453D),
@@ -4344,12 +5059,12 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          LocalizedText(
                             '光之雷達',
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w800),
                           ),
-                          Text(
+                          LocalizedText(
                             sosContacts.isNotEmpty
                                 ? '求救光點 ${sosContacts.length} 個'
                                 : nearbyCount == 0
@@ -4381,11 +5096,11 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                     ActionChip(
                       key: const ValueKey('radar-user-name-chip'),
                       avatar: const Icon(Icons.person_pin_circle, size: 16),
-                      label: Text(widget.mesh.identityName),
+                      label: LocalizedText(widget.mesh.identityName),
                       side: const BorderSide(color: Color(0xFFD7DED7)),
                       backgroundColor: const Color(0xFFE0F2E9),
                       visualDensity: VisualDensity.compact,
-                      tooltip: '更改用戶名稱',
+                      tooltip: _localizedUiText('更改用戶名稱'),
                       onPressed: widget.onEditUserName,
                     ),
                     SegmentedButton<_RadarMapMode>(
@@ -4394,12 +5109,12 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                         ButtonSegment<_RadarMapMode>(
                           value: _RadarMapMode.online,
                           icon: Icon(Icons.public, size: 16),
-                          label: Text('線上'),
+                          label: LocalizedText('線上'),
                         ),
                         ButtonSegment<_RadarMapMode>(
                           value: _RadarMapMode.offline,
                           icon: Icon(Icons.map_outlined, size: 16),
-                          label: Text('離線'),
+                          label: LocalizedText('離線'),
                         ),
                       ],
                       selected: {_mapMode},
@@ -4417,7 +5132,7 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.my_location),
-                      label: const Text('定位'),
+                      label: const LocalizedText('定位'),
                     ),
                   ],
                 ),
@@ -4429,6 +5144,9 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
               padding: const EdgeInsets.all(12),
               child: effectiveMapMode == _RadarMapMode.online
                   ? _OnlineGoogleRadarMap(
+                      key: ValueKey(
+                        'online-google-map-${_currentAppLanguage.code}',
+                      ),
                       enabled: widget.enableWebView,
                       apiKey: _googleMapsApiKey,
                       mapId: _googleMapsMapId,
@@ -4506,7 +5224,7 @@ class _RadarStatus extends StatelessWidget {
         const Icon(Icons.satellite_alt_outlined, size: 18),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
+          child: LocalizedText(
             text,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -4551,7 +5269,7 @@ class _ClosestRadarStrip extends StatelessWidget {
         children: [
           Chip(
             avatar: const Icon(Icons.near_me_outlined, size: 16),
-            label: Text(label),
+            label: LocalizedText(label),
             side: const BorderSide(color: Color(0xFFD7DED7)),
             backgroundColor: const Color(0xFFFAFBF7),
             visualDensity: VisualDensity.compact,
@@ -4561,7 +5279,7 @@ class _ClosestRadarStrip extends StatelessWidget {
             child: contacts.isEmpty
                 ? Align(
                     alignment: Alignment.centerLeft,
-                    child: Text(
+                    child: LocalizedText(
                       location == null ? '定位後顯示最近光點' : '未見其他光點',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -4592,7 +5310,7 @@ class _ClosestRadarStrip extends StatelessWidget {
                                   ? const Color(0xFF0D7C66)
                                   : null,
                             ),
-                            label: Text(
+                            label: LocalizedText(
                               '${contact.name} ${distance.toStringAsFixed(1)}m',
                             ),
                             side: BorderSide(
@@ -4607,7 +5325,7 @@ class _ClosestRadarStrip extends StatelessWidget {
                             onPressed: () => onSelectedContact(contact.id),
                           ),
                           const SizedBox(width: 4),
-                          Tooltip(
+                          LocalizedTooltip(
                             message: '引用名稱聊天',
                             child: IconButton.filledTonal(
                               onPressed: () => onQuoteContactName(contact.name),
@@ -4661,7 +5379,7 @@ class _SosRadarStrip extends StatelessWidget {
         children: [
           const Chip(
             avatar: Icon(Icons.warning_amber, size: 16),
-            label: Text('求救光點'),
+            label: LocalizedText('求救光點'),
             side: BorderSide(color: Color(0xFFE0B8AE)),
             backgroundColor: Color(0xFFFFEEE9),
             visualDensity: VisualDensity.compact,
@@ -4689,7 +5407,7 @@ class _SosRadarStrip extends StatelessWidget {
                   children: [
                     ActionChip(
                       avatar: const Icon(Icons.warning_amber, size: 16),
-                      label: Text(label),
+                      label: LocalizedText(label),
                       side: BorderSide(
                         color: isSelected
                             ? const Color(0xFFB00020)
@@ -4699,12 +5417,12 @@ class _SosRadarStrip extends StatelessWidget {
                           ? const Color(0xFFFFDAD6)
                           : const Color(0xFFFFEEE9),
                       visualDensity: VisualDensity.compact,
-                      tooltip: '選取求救光點',
+                      tooltip: _localizedUiText('選取求救光點'),
                       onPressed: () => onSelectedContact(contact.id),
                     ),
                     if (!contact.isMe) ...[
                       const SizedBox(width: 4),
-                      Tooltip(
+                      LocalizedTooltip(
                         message: '引用求救名稱聊天',
                         child: IconButton.filledTonal(
                           onPressed: () => onQuoteContactName(contact.name),
@@ -4773,7 +5491,7 @@ class _DistrictRadarReport extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
+                child: LocalizedText(
                   currentDistrict == null ? '同區人數' : '同區人數 · $currentDistrict',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -4783,7 +5501,7 @@ class _DistrictRadarReport extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
+              LocalizedText(
                 summary,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -4800,7 +5518,7 @@ class _DistrictRadarReport extends StatelessWidget {
             child: report.districtCounts.isEmpty
                 ? Align(
                     alignment: Alignment.centerLeft,
-                    child: Text(
+                    child: LocalizedText(
                       '暫未收到區域人數',
                       style: textTheme.bodySmall?.copyWith(
                         color: const Color(0xFF66756D),
@@ -4825,7 +5543,7 @@ class _DistrictRadarReport extends StatelessWidget {
                               : Icons.person_pin_circle_outlined,
                           size: 16,
                         ),
-                        label: Text('${entry.key} ${entry.value} 人'),
+                        label: LocalizedText('${entry.key} ${entry.value} 人'),
                         side: BorderSide(
                           color: isCurrentDistrict
                               ? const Color(0xFF0D7C66)
@@ -5141,7 +5859,7 @@ class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
                   decoration: const BoxDecoration(color: Color(0xCCFFFFFF)),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: Text(
+                    child: LocalizedText(
                       contact.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -5182,7 +5900,7 @@ class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
                 ),
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  child: Text(
+                  child: LocalizedText(
                     _wongTaiSinMeetupName,
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
                   ),
@@ -5208,7 +5926,7 @@ class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
               children: [
                 CircularProgressIndicator(),
                 SizedBox(height: 10),
-                Text('正在載入香港離線地圖…'),
+                LocalizedText('正在載入香港離線地圖…'),
               ],
             ),
           );
@@ -5230,7 +5948,7 @@ class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
                 alignment: Alignment.topCenter,
                 child: Padding(
                   padding: EdgeInsets.all(8),
-                  child: Chip(label: Text('未匯入街道瓦片：目前顯示概覽圖')),
+                  child: Chip(label: LocalizedText('未匯入街道瓦片：目前顯示概覽圖')),
                 ),
               ),
             ],
@@ -5303,13 +6021,13 @@ class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
               child: Column(
                 children: [
                   IconButton.filledTonal(
-                    tooltip: '放大地圖',
+                    tooltip: _localizedUiText('放大地圖'),
                     onPressed: () => _changeZoom(1),
                     icon: const Icon(Icons.add),
                   ),
                   const SizedBox(height: 4),
                   IconButton.filledTonal(
-                    tooltip: '縮小地圖',
+                    tooltip: _localizedUiText('縮小地圖'),
                     onPressed: () => _changeZoom(-1),
                     icon: const Icon(Icons.remove),
                   ),
@@ -5323,7 +6041,7 @@ class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
                 decoration: BoxDecoration(color: Color(0xCCFFFFFF)),
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Text(
+                  child: LocalizedText(
                     '© OpenStreetMap contributors',
                     style: TextStyle(fontSize: 9, color: Color(0xFF33423B)),
                   ),
@@ -5571,7 +6289,7 @@ class _OfflineHongKongMapState extends State<_OfflineHongKongMap> {
                           ),
                           fit: BoxFit.contain,
                           filterQuality: FilterQuality.medium,
-                          semanticLabel: '香港十八區離線地圖',
+                          semanticLabel: _localizedUiText('香港十八區離線地圖'),
                         ),
                         CustomPaint(
                           painter: _HongKongMapPainter(
@@ -5682,7 +6400,7 @@ class _DistrictMapThumbnail extends StatelessWidget {
                   width: double.infinity,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
+                    child: LocalizedText(
                       district.name,
                       textAlign: TextAlign.center,
                       maxLines: 1,
@@ -5706,6 +6424,7 @@ class _DistrictMapThumbnail extends StatelessWidget {
 
 class _OnlineGoogleRadarMap extends StatefulWidget {
   const _OnlineGoogleRadarMap({
+    super.key,
     required this.enabled,
     required this.apiKey,
     required this.mapId,
@@ -5920,7 +6639,7 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
     if (!hasMe && location != null) {
       contacts.insert(0, _locationToMap(location));
     }
-    contacts.add(const <String, Object?>{
+    contacts.add(<String, Object?>{
       'id': _wongTaiSinMeetupId,
       'name': _wongTaiSinMeetupName,
       'lat': _wongTaiSinMeetupLatitude,
@@ -5930,7 +6649,7 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
       'isSosActive': false,
       'isNearby': false,
       'isMeetup': true,
-      'district': '黃大仙區',
+      'district': _localizedUiText('黃大仙區'),
     });
 
     final center = location == null
@@ -5960,7 +6679,9 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
       'isMe': contact.isMe,
       'isSosActive': contact.isSosActive,
       'isNearby': widget.nearbyContactIds.contains(contact.id),
-      'district': _districtNameForLocation(contact.location),
+      'district': _localizedUiText(
+        _districtNameForLocation(contact.location) ?? '未知區域',
+      ),
     };
   }
 
@@ -5974,7 +6695,9 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
       'isMe': true,
       'isSosActive': false,
       'isNearby': false,
-      'district': _districtNameForLocation(location),
+      'district': _localizedUiText(
+        _districtNameForLocation(location) ?? '未知區域',
+      ),
     };
   }
 
@@ -6084,7 +6807,7 @@ class _MapContactQuoteAction extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    LocalizedText(
                       contact.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -6094,7 +6817,7 @@ class _MapContactQuoteAction extends StatelessWidget {
                       ),
                     ),
                     if (districtName != null)
-                      Text(
+                      LocalizedText(
                         districtName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -6106,7 +6829,7 @@ class _MapContactQuoteAction extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Tooltip(
+              LocalizedTooltip(
                 message: '引用名稱聊天',
                 child: IconButton.filledTonal(
                   onPressed: () => onQuoteContactName(contact.name),
@@ -6158,7 +6881,7 @@ class _GoogleMapUnavailable extends StatelessWidget {
             children: [
               Icon(icon, color: const Color(0xFF0D7C66), size: 34),
               const SizedBox(height: 10),
-              Text(
+              LocalizedText(
                 title,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -6167,7 +6890,7 @@ class _GoogleMapUnavailable extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
+              LocalizedText(
                 message,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -6180,7 +6903,7 @@ class _GoogleMapUnavailable extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onAction,
                   icon: const Icon(Icons.refresh),
-                  label: Text(actionLabel!),
+                  label: LocalizedText(actionLabel!),
                 ),
               ],
             ],
@@ -6198,6 +6921,14 @@ String _googleRadarMapHtml({
 }) {
   final encodedKey = Uri.encodeQueryComponent(apiKey);
   final mapIdOption = mapId.isEmpty ? '' : ', mapId: ${jsonEncode(mapId)}';
+  final loadingLabel = jsonEncode(_localizedUiText('載入 Google Map'));
+  final sosPrefix = jsonEncode(_localizedUiText('求救 · '));
+  final lightPointLabel = jsonEncode(_localizedUiText('光點'));
+  final meetupLabel = jsonEncode(_localizedUiText('集合點'));
+  final meLabel = jsonEncode(_localizedUiText('我'));
+  final nearbyLabel = jsonEncode(_localizedUiText('近'));
+  final unknownDistrictLabel = jsonEncode(_localizedUiText('未知區域'));
+  final quoteLabel = jsonEncode(_localizedUiText('引用'));
 
   return '''
 <!doctype html>
@@ -6284,9 +7015,20 @@ String _googleRadarMapHtml({
 </head>
 <body>
   <div id="map"></div>
-  <div id="loading">載入 Google Map</div>
+  <div id="loading"></div>
   <script>
     window.__RADAR_STATE__ = $initialStateJson;
+    const ui = {
+      loading: $loadingLabel,
+      sosPrefix: $sosPrefix,
+      lightPoint: $lightPointLabel,
+      meetup: $meetupLabel,
+      me: $meLabel,
+      nearby: $nearbyLabel,
+      unknownDistrict: $unknownDistrictLabel,
+      quote: $quoteLabel
+    };
+    document.getElementById('loading').textContent = ui.loading;
 
     let map;
     let infoWindow;
@@ -6458,16 +7200,16 @@ String _googleRadarMapHtml({
         map,
         position,
         title: isSosActive
-          ? '求救 · ' + String(contact.name || '光點')
-          : String(contact.name || '光點'),
+          ? ui.sosPrefix + String(contact.name || ui.lightPoint)
+          : String(contact.name || ui.lightPoint),
         label: isMeetup
-          ? { text: '集合點', color: '#5d4037', fontWeight: '900' }
+          ? { text: ui.meetup, color: '#5d4037', fontWeight: '900' }
           : isSosActive
           ? { text: 'SOS', color: '#ffffff', fontWeight: '900' }
           : isMe
-          ? { text: '我', color: '#ffffff', fontWeight: '800' }
+          ? { text: ui.me, color: '#ffffff', fontWeight: '800' }
           : isNearby
-            ? { text: '近', color: '#ffffff', fontWeight: '800' }
+            ? { text: ui.nearby, color: '#ffffff', fontWeight: '800' }
             : null,
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
@@ -6549,9 +7291,9 @@ String _googleRadarMapHtml({
       if (!contact) {
         return;
       }
-      const name = String(contact.name || '光點');
+      const name = String(contact.name || ui.lightPoint);
       const isSosActive = contact.isSosActive === true;
-      const district = contact.district ? String(contact.district) : '未知區域';
+      const district = contact.district ? String(contact.district) : ui.unknownDistrict;
       const accuracy = Math.round(Number(contact.accuracyMeters || 0));
       const meta = accuracy > 0
         ? district + ' · +/- ' + accuracy + 'm'
@@ -6568,7 +7310,7 @@ String _googleRadarMapHtml({
 
       const title = document.createElement('div');
       title.className = 'info-title';
-      title.textContent = isSosActive ? '求救 · ' + name : name;
+      title.textContent = isSosActive ? ui.sosPrefix + name : name;
       if (isSosActive) {
         title.style.color = '#b00020';
       }
@@ -6585,7 +7327,7 @@ String _googleRadarMapHtml({
         const quoteButton = document.createElement('button');
         quoteButton.type = 'button';
         quoteButton.className = 'info-copy';
-        quoteButton.textContent = '引用';
+        quoteButton.textContent = ui.quote;
         quoteButton.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -6697,7 +7439,7 @@ class _MapDistrictFocusBanner extends StatelessWidget {
               const Icon(Icons.explore_outlined, size: 16),
               const SizedBox(width: 6),
               Flexible(
-                child: Text(
+                child: LocalizedText(
                   currentDistrictName,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -6811,7 +7553,7 @@ class _HongKongMapPainter extends CustomPainter {
   void _drawEmptyHint(Canvas canvas, Rect rect) {
     final painter = TextPainter(
       text: TextSpan(
-        text: '按「定位」在地圖顯示你的光點',
+        text: _localizedUiText('按「定位」在地圖顯示你的光點'),
         style: TextStyle(
           color: const Color(0xFF4B5F56),
           fontWeight: FontWeight.w700,
@@ -7029,7 +7771,7 @@ class _HongKongMapPainter extends CustomPainter {
   }) {
     final textPainter = TextPainter(
       text: TextSpan(
-        text: label,
+        text: _localizedUiText(label),
         style: TextStyle(
           color: Colors.white,
           fontSize: textScaler.scale(13),
@@ -7602,10 +8344,10 @@ class CommunityNetworkPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('社區資訊'),
+        title: const LocalizedText('社區資訊'),
         actions: [
           IconButton(
-            tooltip: '開啟 AIECO.HK',
+            tooltip: _localizedUiText('開啟 AIECO.HK'),
             onPressed: () => unawaited(_openExternalUrl(context, _aiecoWebUrl)),
             icon: const Icon(Icons.open_in_new),
           ),
@@ -7636,7 +8378,7 @@ class _SosLightButton extends StatelessWidget {
     }
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ).showSnackBar(SnackBar(content: LocalizedText(message)));
   }
 
   Future<bool> _confirmStart(BuildContext context) async {
@@ -7644,17 +8386,17 @@ class _SosLightButton extends StatelessWidget {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('啟動 SOS 燈？'),
-          content: const Text('手機閃光燈會持續閃出 SOS 燈號，直到你再按一次停止。'),
+          title: const LocalizedText('啟動 SOS 燈？'),
+          content: const LocalizedText('手機閃光燈會持續閃出 SOS 燈號，直到你再按一次停止。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('取消'),
+              child: const LocalizedText('取消'),
             ),
             FilledButton.icon(
               onPressed: () => Navigator.of(dialogContext).pop(true),
               icon: const Icon(Icons.flash_on),
-              label: const Text('確認啟動'),
+              label: const LocalizedText('確認啟動'),
             ),
           ],
         );
@@ -7674,7 +8416,7 @@ class _SosLightButton extends StatelessWidget {
             ? const Color(0xFFC4512C)
             : const Color(0xFFFFEEE3);
 
-        return Tooltip(
+        return LocalizedTooltip(
           message: active ? '停止 SOS 燈' : '啟動 SOS 燈',
           child: FilledButton.icon(
             onPressed: controller.busy ? null : () => _handlePressed(context),
@@ -7684,7 +8426,7 @@ class _SosLightButton extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.flash_on, size: 16),
-            label: const Text(
+            label: const LocalizedText(
               'SOS 燈',
               maxLines: 1,
               overflow: TextOverflow.clip,
@@ -7928,12 +8670,12 @@ class _StatusAndPeersPanel extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        LocalizedText(
                           mesh.isRunning ? '$modeTitle 已啟動' : '$modeTitle 未啟動',
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w800),
                         ),
-                        Text(
+                        LocalizedText(
                           peerSummary,
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
@@ -7949,12 +8691,12 @@ class _StatusAndPeersPanel extends StatelessWidget {
                   ButtonSegment<MeshNetworkMode>(
                     value: MeshNetworkMode.online,
                     icon: Icon(Icons.public, size: 16),
-                    label: Text('線上'),
+                    label: LocalizedText('線上'),
                   ),
                   ButtonSegment<MeshNetworkMode>(
                     value: MeshNetworkMode.offline,
                     icon: Icon(Icons.hub_outlined, size: 16),
-                    label: Text('離線'),
+                    label: LocalizedText('離線'),
                   ),
                 ],
                 selected: {mesh.networkMode},
@@ -7965,7 +8707,7 @@ class _StatusAndPeersPanel extends StatelessWidget {
               const SizedBox(height: 10),
               _NetworkModeNotice(mesh: mesh),
               const SizedBox(height: 12),
-              Tooltip(
+              LocalizedTooltip(
                 message: '更改用戶名稱',
                 child: InkWell(
                   key: const ValueKey('network-user-name-card'),
@@ -7993,14 +8735,14 @@ class _StatusAndPeersPanel extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
+                                LocalizedText(
                                   '你的用戶名稱',
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(
                                         color: const Color(0xFF66756D),
                                       ),
                                 ),
-                                Text(
+                                LocalizedText(
                                   mesh.userName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -8010,7 +8752,7 @@ class _StatusAndPeersPanel extends StatelessWidget {
                                         letterSpacing: 0,
                                       ),
                                 ),
-                                Text(
+                                LocalizedText(
                                   '光點名稱：${mesh.displayName}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -8025,7 +8767,7 @@ class _StatusAndPeersPanel extends StatelessWidget {
                           const SizedBox(width: 10),
                           const Icon(Icons.edit_outlined, size: 20),
                           const SizedBox(width: 8),
-                          const Tooltip(
+                          const LocalizedTooltip(
                             message: '光點名稱固定，不能更改',
                             child: Icon(Icons.lock_outline, size: 20),
                           ),
@@ -8036,7 +8778,7 @@ class _StatusAndPeersPanel extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
+              LocalizedText(
                 mesh.status,
                 style: Theme.of(
                   context,
@@ -8097,7 +8839,7 @@ class _NetworkModeNotice extends StatelessWidget {
           Icon(icon, size: 18, color: color),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
+            child: LocalizedText(
               text,
               softWrap: true,
               style: Theme.of(
@@ -8136,7 +8878,7 @@ class _EmptyPeers extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE0E5DE)),
       ),
-      child: Text(message),
+      child: LocalizedText(message),
     );
   }
 }
@@ -8175,13 +8917,13 @@ class _PeerTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                LocalizedText(
                   peer.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
-                Text(
+                LocalizedText(
                   '$source · $age',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -8294,7 +9036,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
         _BluetoothHotspotNotice(controller: controller),
         if (controller.p2pPeers.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Text(
+          LocalizedText(
             '藍芽 peers',
             style: theme.textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.w800,
@@ -8345,14 +9087,16 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                     ? null
                     : () => unawaited(_scanPeersAndConnectMesh()),
                 icon: const Icon(Icons.radar),
-                label: Text(controller.isIOS ? '掃 LAN 並連接' : '掃 P2P 並連接'),
+                label: LocalizedText(
+                  controller.isIOS ? '掃 LAN 並連接' : '掃 P2P 並連接',
+                ),
               ),
             ),
           ],
         ),
         const SizedBox(height: 10),
         if (controller.p2pPeers.isNotEmpty) ...[
-          Text(
+          LocalizedText(
             controller.isIOS ? 'WiFi LAN peers' : 'Wi‑Fi Direct peers',
             style: theme.textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.w800,
@@ -8368,7 +9112,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
           const SizedBox(height: 12),
         ],
         if (controller.wifiNetworks.isNotEmpty) ...[
-          Text(
+          LocalizedText(
             '附近 WiFi',
             style: theme.textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.w800,
@@ -8427,7 +9171,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      LocalizedText(
                         isBluetoothMode
                             ? '藍芽模式'
                             : controller.isIOS
@@ -8437,7 +9181,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      Text(
+                      LocalizedText(
                         controller.summary,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -8454,7 +9198,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                   )
                 else
                   IconButton(
-                    tooltip: '刷新狀態',
+                    tooltip: _localizedUiText('刷新狀態'),
                     onPressed: () => unawaited(controller.refreshStatus()),
                     icon: const Icon(Icons.refresh),
                   ),
@@ -8475,7 +9219,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                       ? null
                       : () => unawaited(controller.requestPermissions()),
                   icon: const Icon(Icons.verified_user_outlined),
-                  label: const Text('權限'),
+                  label: const LocalizedText('權限'),
                 ),
                 if (isBluetoothMode) ...[
                   FilledButton.icon(
@@ -8483,7 +9227,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                         ? null
                         : () => unawaited(_refreshBluetoothMode()),
                     icon: const Icon(Icons.bluetooth_searching),
-                    label: const Text('藍芽刷新'),
+                    label: const LocalizedText('藍芽刷新'),
                   ),
                   if (!controller.isIOS)
                     OutlinedButton.icon(
@@ -8493,10 +9237,10 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                               controller.openBluetoothTetherSettings(),
                             ),
                       icon: const Icon(Icons.bluetooth_connected),
-                      label: const Text('藍芽熱點'),
+                      label: const LocalizedText('藍芽熱點'),
                     ),
                   IconButton.outlined(
-                    tooltip: '藍芽設定',
+                    tooltip: _localizedUiText('藍芽設定'),
                     onPressed: controller.busy
                         ? null
                         : () => unawaited(controller.openBluetoothSettings()),
@@ -8508,7 +9252,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                         ? null
                         : () => unawaited(controller.discoverAppPeers()),
                     icon: const Icon(Icons.radar),
-                    label: Text(controller.isIOS ? '掃 LAN' : '掃 P2P'),
+                    label: LocalizedText(controller.isIOS ? '掃 LAN' : '掃 P2P'),
                   ),
                   if (!controller.isIOS) ...[
                     OutlinedButton.icon(
@@ -8516,7 +9260,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                           ? null
                           : () => unawaited(controller.createGroup()),
                       icon: const Icon(Icons.hub_outlined),
-                      label: const Text('開光網'),
+                      label: const LocalizedText('開光網'),
                     ),
                     OutlinedButton.icon(
                       onPressed: controller.busy
@@ -8527,11 +9271,11 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                             ? Icons.wifi_tethering
                             : Icons.stop_circle,
                       ),
-                      label: Text(hotspot == null ? '開熱點' : '關熱點'),
+                      label: LocalizedText(hotspot == null ? '開熱點' : '關熱點'),
                     ),
                   ],
                   IconButton.outlined(
-                    tooltip: 'WiFi 設定',
+                    tooltip: _localizedUiText('WiFi 設定'),
                     onPressed: controller.busy
                         ? null
                         : () => unawaited(controller.openWifiSettings()),
@@ -8567,7 +9311,7 @@ class _WifiNotice extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE0E5DE)),
       ),
-      child: Text(
+      child: LocalizedText(
         controller.lastMessage,
         style: Theme.of(context).textTheme.bodySmall,
       ),
@@ -8594,12 +9338,12 @@ class _WirelessModePicker extends StatelessWidget {
           ButtonSegment<WifiTransportMode>(
             value: WifiTransportMode.bluetooth,
             icon: Icon(Icons.bluetooth),
-            label: Text('藍芽'),
+            label: LocalizedText('藍芽'),
           ),
           ButtonSegment<WifiTransportMode>(
             value: WifiTransportMode.wifi,
             icon: Icon(Icons.wifi),
-            label: Text('WiFi'),
+            label: LocalizedText('WiFi'),
           ),
         ],
         selected: {controller.transportMode},
@@ -8636,7 +9380,7 @@ class _MeshAutoConnectNotice extends StatelessWidget {
           const Icon(Icons.hub_outlined, color: Color(0xFF285BAA)),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
+            child: LocalizedText(
               peer == null
                   ? controller.isIOS
                         ? 'MESH 自動連接會掃同一 WiFi 內的 app peers，不用輸入 IP。掃到後會用 TCP mesh 同步。'
@@ -8678,7 +9422,10 @@ class _BluetoothHotspotNotice extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text, style: Theme.of(context).textTheme.bodySmall),
+            child: LocalizedText(
+              text,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ),
         ],
       ),
@@ -8735,12 +9482,17 @@ class _CredentialBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          LocalizedText(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
           const SizedBox(height: 4),
-          SelectableText('$ssidLabel: ${ssid ?? '系統未提供'}'),
-          SelectableText('$passphraseLabel: ${passphrase ?? '系統未提供'}'),
+          SelectableText(_localizedUiText('$ssidLabel: ${ssid ?? '系統未提供'}')),
+          SelectableText(
+            _localizedUiText('$passphraseLabel: ${passphrase ?? '系統未提供'}'),
+          ),
           const SizedBox(height: 4),
-          Text(detail, style: Theme.of(context).textTheme.bodySmall),
+          LocalizedText(detail, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
@@ -8776,7 +9528,7 @@ class _P2pPeerTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  LocalizedText(
                     peer.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -8789,7 +9541,7 @@ class _P2pPeerTile extends StatelessWidget {
                         const SizedBox(width: 6),
                       ],
                       Expanded(
-                        child: Text(
+                        child: LocalizedText(
                           peer.hasLanEndpoint
                               ? '同一 WiFi · ${peer.host}:${peer.port}'
                               : peer.isAppPeer
@@ -8806,7 +9558,9 @@ class _P2pPeerTile extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: peer.hasLanEndpoint ? '連接 LAN peer' : '連接 P2P',
+              tooltip: _localizedUiText(
+                peer.hasLanEndpoint ? '連接 LAN peer' : '連接 P2P',
+              ),
               onPressed: onConnect,
               icon: const Icon(Icons.link),
             ),
@@ -8830,7 +9584,7 @@ class _AppPeerBadge extends StatelessWidget {
       ),
       child: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        child: Text(
+        child: LocalizedText(
           'APP',
           style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
         ),
@@ -8891,7 +9645,7 @@ class _WifiNetworkTile extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
+                            child: LocalizedText(
                               network.ssid,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -8907,7 +9661,7 @@ class _WifiNetworkTile extends StatelessWidget {
                             ),
                         ],
                       ),
-                      Text(
+                      LocalizedText(
                         '${network.level} dBm · ${network.frequency} MHz',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
@@ -8920,7 +9674,7 @@ class _WifiNetworkTile extends StatelessWidget {
                     child: Icon(Icons.check_circle, color: Color(0xFF0D7C66)),
                   ),
                 IconButton(
-                  tooltip: '連接 WiFi',
+                  tooltip: _localizedUiText('連接 WiFi'),
                   onPressed: onConnect,
                   icon: const Icon(Icons.login),
                 ),
@@ -8946,7 +9700,7 @@ class _MeshNetworkBadge extends StatelessWidget {
       ),
       child: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        child: Text(
+        child: LocalizedText(
           'MESH',
           style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
         ),
@@ -8978,7 +9732,7 @@ class _EmptyWireless extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE0E5DE)),
       ),
-      child: Text(message),
+      child: LocalizedText(message),
     );
   }
 }
@@ -9135,7 +9889,7 @@ class _ChatPanelState extends State<_ChatPanel> {
                     const Icon(Icons.forum_outlined, color: Color(0xFF0D7C66)),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text(
+                      child: LocalizedText(
                         activeRoom.name,
                         key: const ValueKey('active-room-name'),
                         maxLines: 1,
@@ -9144,13 +9898,23 @@ class _ChatPanelState extends State<_ChatPanel> {
                             ?.copyWith(fontWeight: FontWeight.w800),
                       ),
                     ),
-                    Text(
-                      '${messages.length} 則',
+                    LocalizedText(
+                      _tr(
+                        context,
+                        '${messages.length} messages',
+                        '${messages.length} 則',
+                        '${messages.length} 条',
+                      ),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(width: 4),
                     IconButton(
-                      tooltip: '聊天安全與舉報',
+                      tooltip: _tr(
+                        context,
+                        'Chat safety & reporting',
+                        '聊天安全與舉報',
+                        '聊天安全与举报',
+                      ),
                       onPressed: widget.onOpenSafetyCenter,
                       icon: const Icon(Icons.shield_outlined),
                     ),
@@ -9162,21 +9926,27 @@ class _ChatPanelState extends State<_ChatPanel> {
                   child: SegmentedButton<_ChatToolsTab>(
                     key: const ValueKey('chat-tools-tabs'),
                     showSelectedIcon: false,
-                    segments: const [
+                    segments: [
                       ButtonSegment<_ChatToolsTab>(
                         value: _ChatToolsTab.users,
-                        icon: Icon(Icons.people_alt_outlined, size: 16),
-                        label: Text('在線用家'),
+                        icon: const Icon(Icons.people_alt_outlined, size: 16),
+                        label: LocalizedText(
+                          _tr(context, 'Online', '在線用家', '在线用户'),
+                        ),
                       ),
                       ButtonSegment<_ChatToolsTab>(
                         value: _ChatToolsTab.rooms,
-                        icon: Icon(Icons.bubble_chart_outlined, size: 16),
-                        label: Text('光團'),
+                        icon: const Icon(Icons.bubble_chart_outlined, size: 16),
+                        label: LocalizedText(
+                          _tr(context, 'Groups', '光團', '光团'),
+                        ),
                       ),
                       ButtonSegment<_ChatToolsTab>(
                         value: _ChatToolsTab.supplies,
-                        icon: Icon(Icons.inventory_2_outlined, size: 16),
-                        label: Text('物資'),
+                        icon: const Icon(Icons.inventory_2_outlined, size: 16),
+                        label: LocalizedText(
+                          _tr(context, 'Supplies', '物資', '物资'),
+                        ),
                       ),
                     ],
                     selected: {_activeToolTab},
@@ -9226,14 +9996,19 @@ class _ChatPanelState extends State<_ChatPanel> {
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => unawaited(widget.onSend()),
                     decoration: InputDecoration(
-                      hintText: '傳送到 ${activeRoom.name}',
+                      hintText: _tr(
+                        context,
+                        'Send to ${activeRoom.name}',
+                        '傳送到 ${activeRoom.name}',
+                        '发送到 ${activeRoom.name}',
+                      ),
                       prefixIcon: const Icon(Icons.chat_bubble_outline),
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 IconButton.filled(
-                  tooltip: '送出',
+                  tooltip: _tr(context, 'Send', '送出', '发送'),
                   onPressed: () => unawaited(widget.onSend()),
                   icon: const Icon(Icons.send),
                 ),
@@ -9279,7 +10054,7 @@ class _OnlineUsersStrip extends StatelessWidget {
             if (showTitle) ...[
               const Icon(Icons.people_alt_outlined, size: 16),
               const SizedBox(width: 6),
-              Text(
+              LocalizedText(
                 '在線用家',
                 style: Theme.of(
                   context,
@@ -9287,7 +10062,7 @@ class _OnlineUsersStrip extends StatelessWidget {
               ),
               const SizedBox(width: 8),
             ],
-            Text(
+            LocalizedText(
               '$onlineCount 人在線',
               style: Theme.of(
                 context,
@@ -9301,7 +10076,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                 color: Color(0xFFB00020),
               ),
               const SizedBox(width: 3),
-              Text(
+              LocalizedText(
                 '求救 $sosCount',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: const Color(0xFFB00020),
@@ -9314,7 +10089,7 @@ class _OnlineUsersStrip extends StatelessWidget {
               key: const ValueKey('online-user-list-button'),
               onPressed: () => _openOnlineUserList(context),
               icon: const Icon(Icons.manage_search, size: 16),
-              label: const Text('找人'),
+              label: const LocalizedText('找人'),
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -9367,7 +10142,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                           size: 16,
                           color: isSosActive ? const Color(0xFFB00020) : null,
                         ),
-                        label: Text(
+                        label: LocalizedText(
                           isSosActive
                               ? '$label · 求救 · 信用 ${user.creditScore}'
                               : '$label · 信用 ${user.creditScore}',
@@ -9377,12 +10152,14 @@ class _OnlineUsersStrip extends StatelessWidget {
                         visualDensity: VisualDensity.compact,
                         side: BorderSide.none,
                         backgroundColor: Colors.transparent,
-                        tooltip: user.isMe ? '更改用戶名稱' : '引用名稱聊天',
+                        tooltip: _localizedUiText(
+                          user.isMe ? '更改用戶名稱' : '引用名稱聊天',
+                        ),
                         onPressed: user.isMe
                             ? onEditUserName
                             : () => onQuoteUserName(user.name),
                       ),
-                      Tooltip(
+                      LocalizedTooltip(
                         message: user.isMe
                             ? '不能為自己加信用分'
                             : user.likedByMe
@@ -9410,7 +10187,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                       if (!user.isMe)
                         PopupMenuButton<_UserModerationAction>(
                           key: ValueKey('moderate-online-user-${user.id}'),
-                          tooltip: '用戶安全選項',
+                          tooltip: _localizedUiText('用戶安全選項'),
                           icon: const Icon(Icons.more_vert, size: 18),
                           padding: EdgeInsets.zero,
                           onSelected: (action) {
@@ -9428,7 +10205,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                               value: _UserModerationAction.report,
                               child: ListTile(
                                 leading: Icon(Icons.flag_outlined),
-                                title: Text('舉報用戶'),
+                                title: LocalizedText('舉報用戶'),
                                 contentPadding: EdgeInsets.zero,
                               ),
                             ),
@@ -9436,7 +10213,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                               value: _UserModerationAction.block,
                               child: ListTile(
                                 leading: Icon(Icons.block),
-                                title: Text('封鎖用戶'),
+                                title: LocalizedText('封鎖用戶'),
                                 contentPadding: EdgeInsets.zero,
                               ),
                             ),
@@ -9490,20 +10267,20 @@ class _OnlineUsersStrip extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
+                            child: LocalizedText(
                               '在線用家',
                               style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                           ),
-                          Text(
+                          LocalizedText(
                             '${filteredUsers.length}/${users.length}',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: const Color(0xFF66756D)),
                           ),
                           const SizedBox(width: 4),
                           IconButton(
-                            tooltip: '關閉',
+                            tooltip: _localizedUiText('關閉'),
                             onPressed: () => Navigator.of(sheetContext).pop(),
                             icon: const Icon(Icons.close),
                           ),
@@ -9513,8 +10290,8 @@ class _OnlineUsersStrip extends StatelessWidget {
                       TextField(
                         key: const ValueKey('online-user-search-input'),
                         autofocus: true,
-                        decoration: const InputDecoration(
-                          labelText: '搜尋用戶或光點名稱',
+                        decoration: InputDecoration(
+                          labelText: _localizedUiText('搜尋用戶或光點名稱'),
                           prefixIcon: Icon(Icons.search),
                         ),
                         onChanged: (value) {
@@ -9531,7 +10308,7 @@ class _OnlineUsersStrip extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: const Color(0xFFE0E5DE)),
                           ),
-                          child: const Text('找不到符合的在線光點。'),
+                          child: const LocalizedText('找不到符合的在線光點。'),
                         )
                       else
                         Flexible(
@@ -9625,13 +10402,13 @@ class _OnlineUserListTile extends StatelessWidget {
               : const Color(0xFF0D7C66),
         ),
       ),
-      title: Text(
+      title: LocalizedText(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontWeight: FontWeight.w800),
       ),
-      subtitle: Text(
+      subtitle: LocalizedText(
         isSosActive
             ? '求救光點 · 信用 ${user.creditScore}'
             : '信用 ${user.creditScore}',
@@ -9642,7 +10419,7 @@ class _OnlineUserListTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            tooltip: user.isMe ? '更改用戶名稱' : '引用名稱聊天',
+            tooltip: _localizedUiText(user.isMe ? '更改用戶名稱' : '引用名稱聊天'),
             onPressed: user.isMe
                 ? onEditUserName
                 : () => onQuoteUserName(user.name),
@@ -9650,11 +10427,13 @@ class _OnlineUserListTile extends StatelessWidget {
           ),
           IconButton(
             key: ValueKey('like-listed-online-user-${user.id}'),
-            tooltip: user.isMe
-                ? '不能為自己加信用分'
-                : user.likedByMe
-                ? '已加信用分'
-                : '為光點加信用分',
+            tooltip: _localizedUiText(
+              user.isMe
+                  ? '不能為自己加信用分'
+                  : user.likedByMe
+                  ? '已加信用分'
+                  : '為光點加信用分',
+            ),
             onPressed: user.isMe || user.likedByMe
                 ? null
                 : () => onLikeUser(user.id),
@@ -9665,7 +10444,7 @@ class _OnlineUserListTile extends StatelessWidget {
           if (!user.isMe)
             PopupMenuButton<_UserModerationAction>(
               key: ValueKey('moderate-listed-online-user-${user.id}'),
-              tooltip: '用戶安全選項',
+              tooltip: _localizedUiText('用戶安全選項'),
               onSelected: (action) {
                 switch (action) {
                   case _UserModerationAction.report:
@@ -9681,7 +10460,7 @@ class _OnlineUserListTile extends StatelessWidget {
                   value: _UserModerationAction.report,
                   child: ListTile(
                     leading: Icon(Icons.flag_outlined),
-                    title: Text('舉報用戶'),
+                    title: LocalizedText('舉報用戶'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
@@ -9689,7 +10468,7 @@ class _OnlineUserListTile extends StatelessWidget {
                   value: _UserModerationAction.block,
                   child: ListTile(
                     leading: Icon(Icons.block),
-                    title: Text('封鎖用戶'),
+                    title: LocalizedText('封鎖用戶'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
@@ -9737,7 +10516,7 @@ class _RoomSelector extends StatelessWidget {
             key: const ValueKey('room-list-button'),
             onPressed: () => _openRoomList(context),
             icon: const Icon(Icons.manage_search, size: 16),
-            label: Text(
+            label: LocalizedText(
               '光團：${activeRoom.name}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -9753,7 +10532,7 @@ class _RoomSelector extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: () => unawaited(onCreateRoom()),
           icon: const Icon(Icons.add),
-          label: const Text('建立光團'),
+          label: const LocalizedText('建立光團'),
         ),
       ],
     );
@@ -9796,20 +10575,20 @@ class _RoomSelector extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
+                            child: LocalizedText(
                               '光團列表',
                               style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                           ),
-                          Text(
+                          LocalizedText(
                             '${filteredRooms.length}/${rooms.length}',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: const Color(0xFF66756D)),
                           ),
                           const SizedBox(width: 4),
                           IconButton(
-                            tooltip: '關閉',
+                            tooltip: _localizedUiText('關閉'),
                             onPressed: () => Navigator.of(sheetContext).pop(),
                             icon: const Icon(Icons.close),
                           ),
@@ -9819,8 +10598,8 @@ class _RoomSelector extends StatelessWidget {
                       TextField(
                         key: const ValueKey('room-search-input'),
                         autofocus: true,
-                        decoration: const InputDecoration(
-                          labelText: '搜尋光團名稱',
+                        decoration: InputDecoration(
+                          labelText: _localizedUiText('搜尋光團名稱'),
                           prefixIcon: Icon(Icons.search),
                         ),
                         onChanged: (value) {
@@ -9837,7 +10616,7 @@ class _RoomSelector extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: const Color(0xFFE0E5DE)),
                           ),
-                          child: const Text('找不到符合的光團。'),
+                          child: const LocalizedText('找不到符合的光團。'),
                         )
                       else
                         Flexible(
@@ -9863,7 +10642,7 @@ class _RoomSelector extends StatelessWidget {
                                     color: const Color(0xFF0D7C66),
                                   ),
                                 ),
-                                title: Text(
+                                title: LocalizedText(
                                   room.name,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -9871,7 +10650,7 @@ class _RoomSelector extends StatelessWidget {
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                subtitle: Text(
+                                subtitle: LocalizedText(
                                   room.id == activeRoomId
                                       ? '目前光團'
                                       : '建立於 ${_formatRoomTime(room.createdAt)}',
@@ -9935,7 +10714,7 @@ class _SupplyShareStrip extends StatelessWidget {
             if (showTitle) ...[
               const Icon(Icons.inventory_2_outlined, size: 16),
               const SizedBox(width: 6),
-              Text(
+              LocalizedText(
                 '物資分享',
                 style: Theme.of(
                   context,
@@ -9943,7 +10722,7 @@ class _SupplyShareStrip extends StatelessWidget {
               ),
               const SizedBox(width: 8),
             ],
-            Text(
+            LocalizedText(
               '${supplies.length} 項',
               style: Theme.of(
                 context,
@@ -9954,7 +10733,7 @@ class _SupplyShareStrip extends StatelessWidget {
               key: const ValueKey('supply-list-button'),
               onPressed: () => _openSupplyList(context),
               icon: const Icon(Icons.manage_search, size: 16),
-              label: const Text('找物資'),
+              label: const LocalizedText('找物資'),
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -9966,7 +10745,7 @@ class _SupplyShareStrip extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: () => unawaited(onShareSupply()),
               icon: const Icon(Icons.add, size: 16),
-              label: const Text('分享物資'),
+              label: const LocalizedText('分享物資'),
               style: OutlinedButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -9976,7 +10755,7 @@ class _SupplyShareStrip extends StatelessWidget {
         ),
         if (!hasSupplies) ...[
           const SizedBox(height: 4),
-          Text(
+          LocalizedText(
             '暫未有人分享物資。',
             style: Theme.of(
               context,
@@ -10026,20 +10805,20 @@ class _SupplyShareStrip extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
+                            child: LocalizedText(
                               '物資列表',
                               style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                           ),
-                          Text(
+                          LocalizedText(
                             '${filteredSupplies.length}/${supplies.length}',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: const Color(0xFF66756D)),
                           ),
                           const SizedBox(width: 4),
                           IconButton(
-                            tooltip: '關閉',
+                            tooltip: _localizedUiText('關閉'),
                             onPressed: () => Navigator.of(sheetContext).pop(),
                             icon: const Icon(Icons.close),
                           ),
@@ -10049,8 +10828,8 @@ class _SupplyShareStrip extends StatelessWidget {
                       TextField(
                         key: const ValueKey('supply-search-input'),
                         autofocus: true,
-                        decoration: const InputDecoration(
-                          labelText: '搜尋物資、數量、地點或分享者',
+                        decoration: InputDecoration(
+                          labelText: _localizedUiText('搜尋物資、數量、地點或分享者'),
                           prefixIcon: Icon(Icons.search),
                         ),
                         onChanged: (value) {
@@ -10067,7 +10846,7 @@ class _SupplyShareStrip extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: const Color(0xFFE0E5DE)),
                           ),
-                          child: Text(
+                          child: LocalizedText(
                             supplies.isEmpty ? '暫未有人分享物資。' : '找不到符合的物資。',
                           ),
                         )
@@ -10143,13 +10922,13 @@ class _SupplyListTile extends StatelessWidget {
           color: Color(0xFF0D7C66),
         ),
       ),
-      title: Text(
+      title: LocalizedText(
         supply.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontWeight: FontWeight.w800),
       ),
-      subtitle: Text(
+      subtitle: LocalizedText(
         '$quantity · $note\n${supply.offeredByName} · ${_formatShortTime(supply.createdAt)}',
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
@@ -10158,13 +10937,13 @@ class _SupplyListTile extends StatelessWidget {
         spacing: 4,
         children: [
           IconButton(
-            tooltip: 'Tag 發起人回覆',
+            tooltip: _localizedUiText('Tag 發起人回覆'),
             onPressed: onQuoteUserName,
             icon: const Icon(Icons.alternate_email),
           ),
           if (canMarkTaken)
             IconButton(
-              tooltip: '標記已取完',
+              tooltip: _localizedUiText('標記已取完'),
               onPressed: onMarkTaken,
               icon: const Icon(Icons.task_alt),
             ),
@@ -10209,14 +10988,14 @@ class _EmptyMessages extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              Text(
+              LocalizedText(
                 '未有訊息',
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
-              const Text(
+              const LocalizedText(
                 '同一 WiFi、熱點或已互通的 mesh 網段內，用戶開啟此 app 後即可互相傳訊。',
                 textAlign: TextAlign.center,
               ),
@@ -10262,14 +11041,14 @@ class _MessageBubble extends StatelessWidget {
                 ? TextDirection.rtl
                 : TextDirection.ltr,
             children: [
-              Text(
+              LocalizedText(
                 '${message.senderName} · ${_formatTime(message.sentAt)}',
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756D)),
               ),
               PopupMenuButton<_MessageModerationAction>(
-                tooltip: '訊息安全選項',
+                tooltip: _localizedUiText('訊息安全選項'),
                 icon: const Icon(Icons.more_vert, size: 18),
                 padding: EdgeInsets.zero,
                 onSelected: (action) {
@@ -10291,7 +11070,7 @@ class _MessageBubble extends StatelessWidget {
                       value: _MessageModerationAction.report,
                       child: ListTile(
                         leading: Icon(Icons.flag_outlined),
-                        title: Text('舉報訊息'),
+                        title: LocalizedText('舉報訊息'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -10300,7 +11079,7 @@ class _MessageBubble extends StatelessWidget {
                       value: _MessageModerationAction.block,
                       child: ListTile(
                         leading: Icon(Icons.block),
-                        title: Text('封鎖用戶'),
+                        title: LocalizedText('封鎖用戶'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -10308,7 +11087,7 @@ class _MessageBubble extends StatelessWidget {
                     value: _MessageModerationAction.delete,
                     child: ListTile(
                       leading: Icon(Icons.delete_outline),
-                      title: Text('從信息流刪除'),
+                      title: LocalizedText('從信息流刪除'),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ),
@@ -10329,7 +11108,7 @@ class _MessageBubble extends StatelessWidget {
                   horizontal: 12,
                   vertical: 10,
                 ),
-                child: Text(
+                child: LocalizedText(
                   message.text,
                   style: TextStyle(color: textColor, height: 1.35),
                 ),
@@ -11280,6 +12059,7 @@ class MeshChatService extends ChangeNotifier {
   static const String _locationKind = 'aieco.light.location.v1';
   static const String _supplyKind = 'aieco.light.supply.v1';
   static const String _creditKind = 'aieco.light.credit.v1';
+  static const String _adminKind = 'aieco.light.admin.v1';
   static const String _defaultRoomId = 'room:main';
   static const String _defaultRoomName = '傳播頻道';
   static const String _appName = 'AIECO.HK 傳播光';
@@ -11360,6 +12140,11 @@ class MeshChatService extends ChangeNotifier {
   final Set<String> _hiddenMessageIds = <String>{};
   final List<MeshModerationReport> _moderationReports =
       <MeshModerationReport>[];
+  final Set<String> _mutedUserIds = <String>{};
+  final Set<String> _adminDeletedMessageIds = <String>{};
+  final Set<String> _adminDeletedRoomIds = <String>{};
+  final Set<String> _adminDeletedSupplyIds = <String>{};
+  final Set<String> _seenAdminActionIds = <String>{};
 
   ServerSocket? _tcpServer;
   RawDatagramSocket? _udpSocket;
@@ -11382,6 +12167,7 @@ class MeshChatService extends ChangeNotifier {
   bool _isRunning = false;
   bool _disposed = false;
   bool _sosActive = false;
+  bool _presenceVisible = true;
   String _status = _onlineRelayUrl.isEmpty ? '正在準備離線 mesh 節點。' : '正在準備線上光之網絡。';
   List<String> _localAddresses = <String>[];
   List<String> _localBroadcastAddresses = <String>[];
@@ -11403,11 +12189,33 @@ class MeshChatService extends ChangeNotifier {
   List<String> get localAddresses => List.unmodifiable(_localAddresses);
   DeviceLocation? get myLocation => _myLocation;
   bool get sosActive => _sosActive;
+  bool get presenceVisible => _presenceVisible;
   bool get eulaAccepted => _eulaAcceptedAt != null;
   DateTime? get eulaAcceptedAt => _eulaAcceptedAt;
   MeshMessage? get lastIncomingMessage => _lastIncomingMessage;
   int get incomingMessageVersion => _incomingMessageVersion;
   int get moderationReportCount => _moderationReports.length;
+  Set<String> get mutedUserIds => Set<String>.unmodifiable(_mutedUserIds);
+  bool isUserMuted(String userId) => _mutedUserIds.contains(userId);
+
+  static String adminPasswordForNow() => '${_hongKongDateKey()}1314';
+
+  static String _hongKongDateKey() {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    return '${now.year.toString().padLeft(4, '0')}'
+        '${now.month.toString().padLeft(2, '0')}'
+        '${now.day.toString().padLeft(2, '0')}';
+  }
+
+  static String _adminProofForDate(String date) {
+    var hash = 0x811C9DC5;
+    for (final value in utf8.encode('aieco-admin:$date:1314')) {
+      hash ^= value;
+      hash = (hash * 0x01000193) & 0xFFFFFFFF;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
   Set<String> get blockedUserIds => Set<String>.unmodifiable(_blockedUserIds);
   List<MeshBlockedUser> get blockedUsers {
     final values =
@@ -11503,9 +12311,14 @@ class MeshChatService extends ChangeNotifier {
   }
 
   List<MeshPeer> get peers {
+    final now = DateTime.now();
     final values =
         _peers.values
-            .where((peer) => !_blockedUserIds.contains(peer.id))
+            .where(
+              (peer) =>
+                  !_blockedUserIds.contains(peer.id) &&
+                  now.difference(peer.lastSeen) <= _peerTtl,
+            )
             .toList()
           ..sort((a, b) => b.lastSeen.compareTo(a.lastSeen));
     return List<MeshPeer>.unmodifiable(values);
@@ -12003,6 +12816,25 @@ class MeshChatService extends ChangeNotifier {
     }
   }
 
+  void setPresenceVisible(bool visible) {
+    if (_presenceVisible == visible) {
+      if (visible) {
+        _removeStalePeers();
+      }
+      return;
+    }
+
+    if (!visible && _isRunning) {
+      _announceGoodbye();
+    }
+    _presenceVisible = visible;
+
+    if (visible && _isRunning) {
+      _removeStalePeers();
+      _announcePresenceBurst();
+    }
+  }
+
   void setOfflineTransportMode(WifiTransportMode mode, {required bool ready}) {
     if (_offlineTransportMode == mode && _offlineTransportReady == ready) {
       return;
@@ -12185,7 +13017,9 @@ class MeshChatService extends ChangeNotifier {
         cancelOnError: true,
       );
 
-      unawaited(_sendPacketToOnline(_helloPacket()));
+      if (_presenceVisible) {
+        unawaited(_sendPacketToOnline(_helloPacket()));
+      }
       unawaited(_syncRecentStateOnline());
     } on Object catch (error) {
       _onlineConnecting = false;
@@ -12551,6 +13385,79 @@ class MeshChatService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void adminDeleteMessage(String messageId) {
+    if (!_messages.any((message) => message.id == messageId)) return;
+    _applyAdminAction('deleteMessage', messageId);
+    _broadcastAdminAction('deleteMessage', messageId);
+  }
+
+  void adminDeleteRoom(String roomId) {
+    if (roomId == _defaultRoomId || !_rooms.containsKey(roomId)) return;
+    _applyAdminAction('deleteRoom', roomId);
+    _broadcastAdminAction('deleteRoom', roomId);
+  }
+
+  void adminDeleteSupply(String supplyId) {
+    if (!_supplies.containsKey(supplyId)) return;
+    _applyAdminAction('deleteSupply', supplyId);
+    _broadcastAdminAction('deleteSupply', supplyId);
+  }
+
+  void adminSetUserMuted(String userId, {required bool muted}) {
+    if (userId.isEmpty || userId == _nodeId) return;
+    final action = muted ? 'muteUser' : 'unmuteUser';
+    _applyAdminAction(action, userId);
+    _broadcastAdminAction(action, userId);
+  }
+
+  void _broadcastAdminAction(String action, String targetId) {
+    final date = _hongKongDateKey();
+    final packet = <String, Object?>{
+      'kind': _adminKind,
+      'app': _appName,
+      'actionId': _newId('admin'),
+      'action': action,
+      'targetId': targetId,
+      'adminDate': date,
+      'adminProof': _adminProofForDate(date),
+      'senderId': _nodeId,
+      'tcpPort': tcpPort,
+      'hops': 0,
+    };
+    _seenAdminActionIds.add(packet['actionId']! as String);
+    unawaited(_sendLocalPacket(packet));
+  }
+
+  bool _applyAdminAction(String action, String targetId) {
+    var changed = false;
+    switch (action) {
+      case 'deleteMessage':
+        _adminDeletedMessageIds.add(targetId);
+        final previousMessageCount = _messages.length;
+        _messages.removeWhere((message) => message.id == targetId);
+        changed = _messages.length != previousMessageCount;
+      case 'deleteRoom':
+        if (targetId == _defaultRoomId) return false;
+        _adminDeletedRoomIds.add(targetId);
+        changed = _rooms.remove(targetId) != null;
+        final previousRoomMessageCount = _messages.length;
+        _messages.removeWhere((message) => message.roomId == targetId);
+        changed = _messages.length != previousRoomMessageCount || changed;
+        if (_activeRoomId == targetId) _activeRoomId = _defaultRoomId;
+      case 'deleteSupply':
+        _adminDeletedSupplyIds.add(targetId);
+        changed = _supplies.remove(targetId) != null;
+      case 'muteUser':
+        changed = _mutedUserIds.add(targetId);
+      case 'unmuteUser':
+        changed = _mutedUserIds.remove(targetId);
+      default:
+        return false;
+    }
+    if (changed) notifyListeners();
+    return changed;
+  }
+
   void setStatus(String value) {
     _status = value;
     notifyListeners();
@@ -12604,6 +13511,11 @@ class MeshChatService extends ChangeNotifier {
   Future<bool> sendMessage(String text) async {
     final clean = text.trim();
     if (clean.isEmpty) {
+      return false;
+    }
+    if (_mutedUserIds.contains(_nodeId)) {
+      _status = '你已被管理員禁言，暫時不能傳送訊息。';
+      notifyListeners();
       return false;
     }
 
@@ -12724,7 +13636,36 @@ class MeshChatService extends ChangeNotifier {
           effectiveRemoteHost,
           fromOnline: fromOnline,
         );
+      case _adminKind:
+        _handleAdminPacket(packet, effectiveRemoteHost, fromOnline: fromOnline);
     }
+  }
+
+  void _handleAdminPacket(
+    Map<String, dynamic> packet,
+    String remoteHost, {
+    bool fromOnline = false,
+  }) {
+    final actionId = _stringValue(packet['actionId']);
+    final action = _stringValue(packet['action']);
+    final targetId = _stringValue(packet['targetId']);
+    final date = _stringValue(packet['adminDate']);
+    final proof = _stringValue(packet['adminProof']);
+    if (actionId == null ||
+        action == null ||
+        targetId == null ||
+        date != _hongKongDateKey() ||
+        proof != _adminProofForDate(date!) ||
+        !_seenAdminActionIds.add(actionId)) {
+      return;
+    }
+
+    _applyAdminAction(action, targetId);
+    final hops = _intValue(packet['hops']) ?? 0;
+    if (fromOnline || hops >= 8) return;
+    final forwarded = Map<String, Object?>.from(packet);
+    forwarded['hops'] = hops + 1;
+    unawaited(_sendPacketToPeers(forwarded, exceptHost: remoteHost));
   }
 
   String _remoteHostForPacket(
@@ -12842,6 +13783,7 @@ class MeshChatService extends ChangeNotifier {
     if (room == null) {
       return;
     }
+    if (_adminDeletedRoomIds.contains(room.id)) return;
 
     final senderId = _stringValue(packet['senderId']);
     if (senderId == _nodeId) {
@@ -12910,6 +13852,11 @@ class MeshChatService extends ChangeNotifier {
         senderId == _nodeId ||
         text == null ||
         text.trim().isEmpty) {
+      return;
+    }
+    if (_adminDeletedMessageIds.contains(messageId) ||
+        _mutedUserIds.contains(senderId)) {
+      _seenMessageIds.add(messageId);
       return;
     }
     if (_blockedUserIds.contains(senderId) ||
@@ -13069,6 +14016,7 @@ class MeshChatService extends ChangeNotifier {
     if (supply == null) {
       return;
     }
+    if (_adminDeletedSupplyIds.contains(supply.id)) return;
     if (_blockedUserIds.contains(supply.offeredById) ||
         !_supplyPassesModeration(supply)) {
       return;
@@ -13151,6 +14099,9 @@ class MeshChatService extends ChangeNotifier {
   }
 
   void _announcePresence() {
+    if (!_presenceVisible) {
+      return;
+    }
     if (_networkMode == MeshNetworkMode.online) {
       unawaited(_sendPacketToOnline(_helloPacket()));
       return;
@@ -13381,6 +14332,9 @@ class MeshChatService extends ChangeNotifier {
     String remoteHost,
     int peerPort,
   ) async {
+    if (!_presenceVisible) {
+      return;
+    }
     final key = '$peerId@$remoteHost:$peerPort';
     final previous = _lastHelloReplyAt[key];
     if (previous != null &&
@@ -13634,6 +14588,7 @@ class MeshChatService extends ChangeNotifier {
     if (room.id.isEmpty || room.name.trim().isEmpty) {
       return;
     }
+    if (_adminDeletedRoomIds.contains(room.id)) return;
     if (_blockedUserIds.contains(room.createdBy) ||
         !MeshContentModeration.check(room.name).allowed) {
       return;
@@ -13669,6 +14624,7 @@ class MeshChatService extends ChangeNotifier {
   }
 
   bool _rememberSupply(MeshSupply supply) {
+    if (_adminDeletedSupplyIds.contains(supply.id)) return false;
     if (supply.id.isEmpty || supply.title.trim().isEmpty) {
       return false;
     }

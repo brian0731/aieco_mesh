@@ -268,6 +268,51 @@ void main() {
     expect(mesh.status, contains('未設定 relay'));
   });
 
+  test('MeshChatService tracks whether presence should be visible', () {
+    final mesh = MeshChatService();
+    addTearDown(mesh.dispose);
+
+    expect(mesh.presenceVisible, isTrue);
+
+    mesh.setPresenceVisible(false);
+    expect(mesh.presenceVisible, isFalse);
+
+    mesh.setPresenceVisible(true);
+    expect(mesh.presenceVisible, isTrue);
+  });
+
+  test('admin actions delete content and toggle user mute', () async {
+    final mesh = MeshChatService();
+    addTearDown(mesh.dispose);
+
+    expect(MeshChatService.adminPasswordForNow(), endsWith('1314'));
+    expect(MeshChatService.adminPasswordForNow(), hasLength(12));
+
+    expect(mesh.createRoom('Admin 測試光團'), isTrue);
+    final roomId = mesh.activeRoom.id;
+    expect(
+      mesh.shareSupply(title: 'Admin 測試物資', quantity: '1', note: ''),
+      isTrue,
+    );
+    final supplyId = mesh.supplies.single.id;
+    await mesh.sendMessage('Admin 測試留言');
+    final messageId = mesh.messages.single.id;
+
+    mesh.adminDeleteMessage(messageId);
+    mesh.adminDeleteRoom(roomId);
+    mesh.adminDeleteSupply(supplyId);
+    mesh.adminSetUserMuted('peer-admin-test', muted: true);
+
+    expect(mesh.messages, isEmpty);
+    expect(mesh.rooms.any((room) => room.id == roomId), isFalse);
+    expect(mesh.supplies, isEmpty);
+    expect(mesh.isUserMuted('peer-admin-test'), isTrue);
+
+    mesh.adminSetUserMuted('peer-admin-test', muted: false);
+    expect(mesh.isUserMuted('peer-admin-test'), isFalse);
+    await mesh.stop();
+  });
+
   test('MeshChatService enforces chat moderation controls', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
@@ -376,6 +421,50 @@ void main() {
     expect(find.textContaining('後再試'), findsWidgets);
   });
 
+  testWidgets('account privacy title unlocks admin after seven taps', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'mesh.eulaAcceptedAt': DateTime.utc(2026).toIso8601String(),
+    });
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const PropagationLightApp(autoStart: false, enableWebView: false),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('account-privacy-entry')));
+    await tester.pumpAndSettle();
+
+    for (var index = 0; index < 7; index += 1) {
+      await tester.tap(find.byKey(const ValueKey('account-privacy-title')));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
+    expect(find.text('Admin 驗證'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('admin-password-input')),
+      MeshChatService.adminPasswordForNow(),
+    );
+    await tester.tap(find.byKey(const ValueKey('admin-login-button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('admin-messages-section')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('admin-rooms-section')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('admin-supplies-section')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('admin-users-section')), findsOneWidget);
+  });
+
   test('MeshChatService marks local SOS in users and radar contacts', () async {
     final mesh = MeshChatService();
     addTearDown(mesh.dispose);
@@ -401,6 +490,83 @@ void main() {
     expect(mesh.radarContacts.single.isSosActive, isTrue);
     expect(mesh.status, contains('求救光點'));
     await mesh.stop();
+  });
+
+  testWidgets('language menu switches the main UI and saves the choice', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'mesh.eulaAcceptedAt': DateTime.utc(2026).toIso8601String(),
+    });
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const PropagationLightApp(autoStart: false, enableWebView: false),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('社區資訊'));
+    await tester.pumpAndSettle();
+    expect(find.text('緊急電話'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('language-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('English'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Propagation Light'), findsOneWidget);
+    expect(find.text('Network'), findsOneWidget);
+    expect(find.text('Community'), findsOneWidget);
+    expect(find.byTooltip('Language'), findsOneWidget);
+    expect(find.text('emergency phone'), findsOneWidget);
+    expect(find.text('community lifebuoy'), findsOneWidget);
+    expect(find.text('緊急電話'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('language-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('简体中文'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('紧急电话'), findsOneWidget);
+    expect(find.text('社区救生圈'), findsOneWidget);
+    expect(find.text('emergency phone'), findsNothing);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('app.language'), 'zh-Hans');
+  });
+
+  testWidgets('saved simplified Chinese localizes full page content', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'app.language': 'zh-Hans',
+      'mesh.eulaAcceptedAt': DateTime.utc(2026).toIso8601String(),
+    });
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const PropagationLightApp(autoStart: false, enableWebView: false),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('传播光'), findsOneWidget);
+    expect(find.text('光之网络'), findsOneWidget);
+    expect(
+      find.textContaining('MESH 自动连接会扫 Wi‑Fi Direct app peers'),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('语言'), findsOneWidget);
+
+    await tester.tap(find.text('社区资讯'));
+    await tester.pumpAndSettle();
+    expect(find.text('紧急电话'), findsOneWidget);
+    expect(find.text('社区救生圈'), findsOneWidget);
   });
 
   testWidgets('Propagation Light renders core chat controls', (
@@ -586,7 +752,7 @@ void main() {
     await tester.tap(find.byTooltip('關閉'));
     await tester.pumpAndSettle();
 
-    final activeRoomName = tester.widget<Text>(
+    final activeRoomName = tester.widget<LocalizedText>(
       find.byKey(const ValueKey('active-room-name')),
     );
     expect(activeRoomName.data, '測試光團');
@@ -678,5 +844,43 @@ void main() {
     expect(find.text('守望地圖'), findsOneWidget);
     expect(find.text('SOS 燈'), findsOneWidget);
     expect(find.text('https://www.aieco.hk'), findsNothing);
+  });
+
+  testWidgets('network page exposes three user support links', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'mesh.eulaAcceptedAt': DateTime.utc(2026).toIso8601String(),
+    });
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const PropagationLightApp(autoStart: false, enableWebView: false),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('network-user-support')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('whatsapp-support-button')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('line-support-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('whatsapp-group-button')), findsOneWidget);
+    expect(find.byTooltip('WhatsApp 查詢'), findsOneWidget);
+    expect(find.byTooltip('LINE 聯絡'), findsOneWidget);
+    expect(find.byTooltip('WhatsApp 群組'), findsOneWidget);
+
+    expect(
+      whatsAppSupportUrl,
+      'https://wa.me/+85262112160?text=%E6%83%B3%E6%9F%A5%E8%A9%A2%E5%85%89%E7%B6%B2%E6%94%AF%E6%8F%B4',
+    );
+    expect(lineSupportUrl, 'https://line.me/ti/p/7elEusTH6q');
+    expect(
+      whatsAppGroupUrl,
+      'https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm?s=cl&p=a&ilr=0',
+    );
   });
 }
