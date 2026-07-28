@@ -27,6 +27,7 @@ const String whatsAppSupportUrl =
 const String lineSupportUrl = 'https://line.me/ti/p/7elEusTH6q';
 const String whatsAppGroupUrl =
     'https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm?s=cl&p=a&ilr=0';
+const String qqChannelUrl = 'https://pd.qq.com/s/fasn44zz5?b=5';
 const String _communityNewsHost = 'www.aieco.hk';
 const String _communityNewsApiPath = '/api/blogs';
 const String _communityNewsCategory = 'community-info';
@@ -281,6 +282,179 @@ String _tr(
   };
 }
 
+const Map<String, String> _featureEnglishTranslations = <String, String>{
+  '分享 / 交換': 'Share / exchange',
+  '分享 / 交換物資': 'Share / exchange supplies',
+  '免費分享': 'Free sharing',
+  '交換物資': 'Exchange supplies',
+  '希望交換物資': 'Wanted in exchange',
+  '發布交換': 'Post exchange',
+  '新增求助': 'Add help request',
+  '需要甚麼協助': 'What help do you need?',
+  '地點 / 補充資料': 'Location / additional details',
+  '發布求助': 'Post help request',
+  '尋找求助': 'Find help requests',
+  '求助列表': 'Help requests',
+  '搜尋求助、地點或求助者': 'Search requests, locations, or requesters',
+  '暫未有人求助。': 'There are no help requests yet.',
+  '找不到符合的求助。': 'No matching help requests found.',
+  '未列地點或補充資料': 'No location or additional details',
+  '引用求助者名稱聊天': 'Quote requester name in chat',
+  '標記已解決': 'Mark as resolved',
+  '請先輸入求助內容。': 'Please enter what help you need.',
+  '找不到這項求助。': 'This help request cannot be found.',
+  '只有求助者可以標記為已解決。': 'Only the requester can mark this as resolved.',
+  '這項求助已標記為已解決。': 'This help request is already resolved.',
+  '開活動': 'Create activity',
+  '建立雷達活動': 'Create radar activity',
+  '活動類型': 'Activity type',
+  '互助': 'Mutual aid',
+  '分享': 'Sharing',
+  '醫療': 'Medical',
+  '心靈': 'Wellbeing',
+  '活動名稱': 'Activity name',
+  '活動詳情 / 集合方式': 'Details / meeting instructions',
+  '建立活動': 'Create activity',
+  '正在定位，定位完成後請再開活動。':
+      'Locating now. Create the activity after location is ready.',
+  '今天已建立 3 次活動，請於明天再建立。':
+      'You have created 3 activities today. Please try again tomorrow.',
+  '請先在光之雷達定位，才可建立活動。':
+      'Locate yourself on Light Radar before creating an activity.',
+  '請先輸入活動名稱。': 'Please enter an activity name.',
+  '未提供活動詳情。': 'No activity details provided.',
+  '引用主辦者聊天': 'Quote host in chat',
+  '這個用戶暫未有活動。': 'This user has no active activities.',
+  '引用用戶聊天': 'Quote user in chat',
+};
+
+const Map<String, String> _featureSimplifiedTranslations = <String, String>{
+  '分享 / 交換': '分享 / 交换',
+  '分享 / 交換物資': '分享 / 交换物资',
+  '免費分享': '免费分享',
+  '交換物資': '交换物资',
+  '希望交換物資': '希望交换物资',
+  '發布交換': '发布交换',
+  '新增求助': '新增求助',
+  '需要甚麼協助': '需要什么协助',
+  '地點 / 補充資料': '地点 / 补充资料',
+  '發布求助': '发布求助',
+  '尋找求助': '寻找求助',
+  '求助列表': '求助列表',
+  '搜尋求助、地點或求助者': '搜索求助、地点或求助者',
+  '暫未有人求助。': '暂时没有人求助。',
+  '找不到符合的求助。': '找不到符合的求助。',
+  '未列地點或補充資料': '未列地点或补充资料',
+  '引用求助者名稱聊天': '引用求助者名称聊天',
+  '標記已解決': '标记已解决',
+  '請先輸入求助內容。': '请先输入求助内容。',
+  '找不到這項求助。': '找不到这项求助。',
+  '只有求助者可以標記為已解決。': '只有求助者可以标记为已解决。',
+  '這項求助已標記為已解決。': '这项求助已标记为已解决。',
+  '開活動': '开活动',
+  '建立雷達活動': '建立雷达活动',
+  '活動類型': '活动类型',
+  '互助': '互助',
+  '分享': '分享',
+  '醫療': '医疗',
+  '心靈': '心灵',
+  '活動名稱': '活动名称',
+  '活動詳情 / 集合方式': '活动详情 / 集合方式',
+  '建立活動': '建立活动',
+  '正在定位，定位完成後請再開活動。': '正在定位，定位完成后请再开活动。',
+  '今天已建立 3 次活動，請於明天再建立。': '今天已建立 3 次活动，请于明天再建立。',
+  '請先在光之雷達定位，才可建立活動。': '请先在光之雷达定位，才可建立活动。',
+  '請先輸入活動名稱。': '请先输入活动名称。',
+  '未提供活動詳情。': '未提供活动详情。',
+  '引用主辦者聊天': '引用主办者聊天',
+  '這個用戶暫未有活動。': '这个用户暂时没有活动。',
+  '引用用戶聊天': '引用用户聊天',
+};
+
+String? _localizedFeaturePattern(String value, AppLanguage language) {
+  if (language == AppLanguage.traditionalChinese) {
+    return null;
+  }
+
+  String? group(RegExp pattern, int index) =>
+      pattern.firstMatch(value)?.group(index);
+
+  final helpCount = group(RegExp(r'^(\d+) 項求助$'), 1);
+  if (helpCount != null) {
+    return language == AppLanguage.english
+        ? '$helpCount help requests'
+        : '$helpCount 项求助';
+  }
+  final wanted = group(RegExp(r'^希望交換：(.+)$'), 1);
+  if (wanted != null) {
+    return language == AppLanguage.english ? 'Wanted: $wanted' : '希望交换：$wanted';
+  }
+  final activityHint = RegExp(
+    r'^活動會標記在目前位置，24 小時後自動結束。今日尚可建立 (\d+) 次。$',
+  ).firstMatch(value);
+  if (activityHint != null) {
+    final remaining = activityHint.group(1) ?? '0';
+    return language == AppLanguage.english
+        ? 'The activity is pinned to your current location and ends automatically after 24 hours. You can create $remaining more today.'
+        : '活动会标记在目前位置，24 小时后自动结束。今天还可建立 $remaining 次。';
+  }
+  final activityCount = group(RegExp(r'^雷達活動 (\d+) 個$'), 1);
+  if (activityCount != null) {
+    return language == AppLanguage.english
+        ? '$activityCount radar activities'
+        : '雷达活动 $activityCount 个';
+  }
+
+  for (final entry in <(RegExp, String, String)>[
+    (RegExp(r'^已發布交換物資：(.+)$'), 'Exchange posted: @@1@@', '已发布交换物资：@@1@@'),
+    (RegExp(r'^已發布求助：(.+)$'), 'Help request posted: @@1@@', '已发布求助：@@1@@'),
+    (
+      RegExp(r'^已將 (.+) 標記為已解決。$'),
+      'Marked @@1@@ as resolved.',
+      '已将 @@1@@ 标记为已解决。',
+    ),
+    (
+      RegExp(r'^(.+) 的求助已解決：(.+)$'),
+      '@@1@@ resolved a help request: @@2@@',
+      '@@1@@ 的求助已解决：@@2@@',
+    ),
+    (
+      RegExp(r'^收到 (.+) 的求助：(.+)$'),
+      'Help request from @@1@@: @@2@@',
+      '收到 @@1@@ 的求助：@@2@@',
+    ),
+    (
+      RegExp(r'^收到 (.+) 的交換物資：(.+)$'),
+      'Exchange offered by @@1@@: @@2@@',
+      '收到 @@1@@ 的交换物资：@@2@@',
+    ),
+    (
+      RegExp(r'^已建立(.+)活動：(.+)（今日尚可建立 (\d+) 次）$'),
+      '@@1@@ activity created: @@2@@ (@@3@@ remaining today)',
+      '已建立@@1@@活动：@@2@@（今天还可建立 @@3@@ 次）',
+    ),
+    (
+      RegExp(r'^收到 (.+) 的(.+)活動：(.+)$'),
+      '@@2@@ activity from @@1@@: @@3@@',
+      '收到 @@1@@ 的@@2@@活动：@@3@@',
+    ),
+    (RegExp(r'^活動有效至 (.+)$'), 'Activity valid until @@1@@', '活动有效至 @@1@@'),
+    (RegExp(r'^(.+)活動 · (.+)$'), '@@1@@ activity · @@2@@', '@@1@@活动 · @@2@@'),
+    (RegExp(r'^(.+)活動：(.+)$'), '@@1@@ activity: @@2@@', '@@1@@活动：@@2@@'),
+    (RegExp(r'^(.+) 的活動$'), '@@1@@ activities', '@@1@@ 的活动'),
+    (RegExp(r'^(\d+) 個有效活動$'), '@@1@@ active activities', '@@1@@ 个有效活动'),
+  ]) {
+    final match = entry.$1.firstMatch(value);
+    if (match == null) continue;
+    var result = language == AppLanguage.english ? entry.$2 : entry.$3;
+    for (var index = 1; index <= match.groupCount; index += 1) {
+      result = result.replaceAll('@@$index@@', match.group(index) ?? '');
+    }
+    return result;
+  }
+  return null;
+}
+
 String _localizedUiText(String value, {AppLanguage? language}) {
   final activeLanguage = language ?? _currentAppLanguage;
   final adminTranslations = switch (activeLanguage) {
@@ -290,6 +464,16 @@ String _localizedUiText(String value, {AppLanguage? language}) {
   };
   final adminExact = adminTranslations[value];
   if (adminExact != null) return adminExact;
+
+  final featureTranslations = switch (activeLanguage) {
+    AppLanguage.english => _featureEnglishTranslations,
+    AppLanguage.simplifiedChinese => _featureSimplifiedTranslations,
+    AppLanguage.traditionalChinese => const <String, String>{},
+  };
+  final featureExact = featureTranslations[value];
+  if (featureExact != null) return featureExact;
+  final featurePattern = _localizedFeaturePattern(value, activeLanguage);
+  if (featurePattern != null) return featurePattern;
 
   final translations = switch (activeLanguage) {
     AppLanguage.english => uiEnglishTranslations,
@@ -331,6 +515,9 @@ const Map<String, String> _adminEnglishTranslations = <String, String>{
   '刪除光團': 'Delete group',
   '目前沒有物資。': 'There are currently no supplies.',
   '刪除物資': 'Delete supply',
+  '活動': 'Activities',
+  '目前沒有活動。': 'There are currently no activities.',
+  '刪除活動': 'Delete activity',
   '用戶禁言': 'User muting',
   '目前沒有其他在線用戶。': 'There are currently no other online users.',
   '已禁言': 'Muted',
@@ -341,6 +528,7 @@ const Map<String, String> _adminEnglishTranslations = <String, String>{
   'WhatsApp 查詢': 'WhatsApp enquiry',
   'LINE 聯絡': 'LINE contact',
   'WhatsApp 群組': 'WhatsApp group',
+  'QQ 頻道': 'QQ channel',
 };
 
 const Map<String, String> _adminSimplifiedTranslations = <String, String>{
@@ -358,6 +546,9 @@ const Map<String, String> _adminSimplifiedTranslations = <String, String>{
   '刪除光團': '删除光团',
   '目前沒有物資。': '目前没有物资。',
   '刪除物資': '删除物资',
+  '活動': '活动',
+  '目前沒有活動。': '目前没有活动。',
+  '刪除活動': '删除活动',
   '用戶禁言': '用户禁言',
   '目前沒有其他在線用戶。': '目前没有其他在线用户。',
   '已禁言': '已禁言',
@@ -367,6 +558,7 @@ const Map<String, String> _adminSimplifiedTranslations = <String, String>{
   'WhatsApp 查詢': 'WhatsApp 查询',
   'LINE 聯絡': 'LINE 联系',
   'WhatsApp 群組': 'WhatsApp 群组',
+  'QQ 頻道': 'QQ 频道',
 };
 
 class LocalizedText extends StatelessWidget {
@@ -1187,6 +1379,8 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
         var title = '';
         var quantity = '';
         var note = '';
+        var supplyType = MeshSupply.shareType;
+        var exchangeFor = '';
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
@@ -1201,14 +1395,39 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                 'title': cleanTitle,
                 'quantity': quantity.trim(),
                 'note': note.trim(),
+                'type': supplyType,
+                'exchangeFor': exchangeFor.trim(),
               });
             }
 
             return AlertDialog(
-              title: const LocalizedText('分享物資'),
+              title: const LocalizedText('分享 / 交換物資'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<String>(
+                      key: const ValueKey('supply-type-input'),
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment<String>(
+                          value: MeshSupply.shareType,
+                          icon: Icon(Icons.volunteer_activism_outlined),
+                          label: LocalizedText('免費分享'),
+                        ),
+                        ButtonSegment<String>(
+                          value: MeshSupply.exchangeType,
+                          icon: Icon(Icons.swap_horiz),
+                          label: LocalizedText('交換物資'),
+                        ),
+                      ],
+                      selected: {supplyType},
+                      onSelectionChanged: (selection) =>
+                          setDialogState(() => supplyType = selection.single),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   TextField(
                     key: const ValueKey('supply-title-input'),
                     autofocus: true,
@@ -1230,6 +1449,19 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                     onChanged: (value) =>
                         setDialogState(() => quantity = value),
                   ),
+                  if (supplyType == MeshSupply.exchangeType) ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      key: const ValueKey('supply-exchange-for-input'),
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: _localizedUiText('希望交換物資'),
+                        prefixIcon: Icon(Icons.swap_horiz),
+                      ),
+                      onChanged: (value) =>
+                          setDialogState(() => exchangeFor = value),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   TextField(
                     key: const ValueKey('supply-note-input'),
@@ -1252,8 +1484,14 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                 ),
                 FilledButton.icon(
                   onPressed: canShare ? submit : null,
-                  icon: const Icon(Icons.volunteer_activism_outlined),
-                  label: const LocalizedText('分享'),
+                  icon: Icon(
+                    supplyType == MeshSupply.exchangeType
+                        ? Icons.swap_horiz
+                        : Icons.volunteer_activism_outlined,
+                  ),
+                  label: LocalizedText(
+                    supplyType == MeshSupply.exchangeType ? '發布交換' : '分享',
+                  ),
                 ),
               ],
             );
@@ -1270,8 +1508,96 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       title: draft['title'] ?? '',
       quantity: draft['quantity'] ?? '',
       note: draft['note'] ?? '',
+      type: draft['type'] ?? MeshSupply.shareType,
+      exchangeFor: draft['exchangeFor'] ?? '',
     );
     if (!shared) {
+      _showMeshStatusSnack();
+    }
+  }
+
+  Future<void> _createHelpRequest() async {
+    final accepted = await _ensureEulaAccepted();
+    if (!accepted || !mounted) {
+      return;
+    }
+
+    final draft = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) {
+        var title = '';
+        var details = '';
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final cleanTitle = title.trim();
+
+            void submit() {
+              if (cleanTitle.isEmpty) {
+                return;
+              }
+              Navigator.of(dialogContext).pop(<String, String>{
+                'title': cleanTitle,
+                'details': details.trim(),
+              });
+            }
+
+            return AlertDialog(
+              title: const LocalizedText('新增求助'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    key: const ValueKey('help-title-input'),
+                    autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: _localizedUiText('需要甚麼協助'),
+                      prefixIcon: Icon(Icons.support_agent),
+                    ),
+                    onChanged: (value) => setDialogState(() => title = value),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    key: const ValueKey('help-details-input'),
+                    minLines: 2,
+                    maxLines: 4,
+                    textInputAction: TextInputAction.done,
+                    decoration: InputDecoration(
+                      labelText: _localizedUiText('地點 / 補充資料'),
+                      prefixIcon: Icon(Icons.place_outlined),
+                    ),
+                    onChanged: (value) => setDialogState(() => details = value),
+                    onSubmitted: (_) => submit(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const LocalizedText('取消'),
+                ),
+                FilledButton.icon(
+                  onPressed: cleanTitle.isEmpty ? null : submit,
+                  icon: const Icon(Icons.add_alert_outlined),
+                  label: const LocalizedText('發布求助'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (draft == null) {
+      return;
+    }
+
+    final created = _mesh.createHelpRequest(
+      title: draft['title'] ?? '',
+      details: draft['details'] ?? '',
+    );
+    if (!created) {
       _showMeshStatusSnack();
     }
   }
@@ -1843,6 +2169,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                   scrollController: _messagesScrollController,
                   onSend: _sendMessage,
                   onCreateRoom: _createRoom,
+                  onCreateHelpRequest: _createHelpRequest,
                   onShareSupply: _shareSupply,
                   onQuoteUserName: _quoteContactNameForChat,
                   onEditUserName: () => unawaited(_editUserName()),
@@ -2185,6 +2512,18 @@ class _NetworkSupportRow extends StatelessWidget {
                 onPressed: () =>
                     unawaited(_openExternalUrl(context, whatsAppGroupUrl)),
                 icon: const Icon(Icons.groups_outlined),
+              ),
+              const SizedBox(width: 6),
+              IconButton.filledTonal(
+                key: const ValueKey('qq-channel-button'),
+                tooltip: _localizedUiText('QQ 頻道', language: language),
+                onPressed: () =>
+                    unawaited(_openExternalUrl(context, qqChannelUrl)),
+                icon: const FaIcon(
+                  FontAwesomeIcons.qq,
+                  color: Color(0xFF1479D7),
+                  size: 22,
+                ),
               ),
             ],
           ),
@@ -4136,6 +4475,7 @@ class _AdminPanel extends StatelessWidget {
               .where((room) => room.id != MeshChatService._defaultRoomId)
               .toList();
           final supplies = mesh.supplies;
+          final activities = mesh.radarActivities;
           final users = mesh.onlineUsers.where((user) => !user.isMe).toList();
           return ConstrainedBox(
             constraints: BoxConstraints(
@@ -4230,6 +4570,37 @@ class _AdminPanel extends StatelessWidget {
                             key: ValueKey('admin-delete-supply-${supply.id}'),
                             tooltip: _localizedUiText('刪除物資'),
                             onPressed: () => mesh.adminDeleteSupply(supply.id),
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                _AdminExpansion(
+                  key: const ValueKey('admin-activities-section'),
+                  icon: Icons.event_busy_outlined,
+                  title: '活動',
+                  count: activities.length,
+                  emptyText: '目前沒有活動。',
+                  children: activities
+                      .map(
+                        (activity) => ListTile(
+                          dense: true,
+                          leading: Icon(
+                            _radarActivityIcon(activity.type),
+                            color: _radarActivityColor(activity.type),
+                          ),
+                          title: LocalizedText(activity.title),
+                          subtitle: LocalizedText(
+                            '${activity.localizedTypeLabel} · ${activity.hostName}',
+                          ),
+                          trailing: IconButton(
+                            key: ValueKey(
+                              'admin-delete-activity-${activity.id}',
+                            ),
+                            tooltip: _localizedUiText('刪除活動'),
+                            onPressed: () =>
+                                mesh.adminDeleteActivity(activity.id),
                             icon: const Icon(Icons.delete_outline),
                           ),
                         ),
@@ -4956,6 +5327,262 @@ class _FeatureGuideBullet extends StatelessWidget {
   }
 }
 
+String _radarActivityTypeLabel(String type) {
+  return switch (type) {
+    MeshRadarActivity.sharingType => '分享',
+    MeshRadarActivity.medicalType => '醫療',
+    MeshRadarActivity.spiritualType => '心靈',
+    _ => '互助',
+  };
+}
+
+IconData _radarActivityIcon(String type) {
+  return switch (type) {
+    MeshRadarActivity.sharingType => Icons.volunteer_activism_outlined,
+    MeshRadarActivity.medicalType => Icons.medical_services_outlined,
+    MeshRadarActivity.spiritualType => Icons.self_improvement,
+    _ => Icons.diversity_1_outlined,
+  };
+}
+
+Color _radarActivityColor(String type) {
+  return switch (type) {
+    MeshRadarActivity.sharingType => const Color(0xFF1565C0),
+    MeshRadarActivity.medicalType => const Color(0xFFC62828),
+    MeshRadarActivity.spiritualType => const Color(0xFF6A1B9A),
+    _ => const Color(0xFF0D7C66),
+  };
+}
+
+void _showRadarActivityDetails(
+  BuildContext context,
+  MeshRadarActivity activity,
+  ValueChanged<String> onQuoteHostName,
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      final expiresAt = activity.expiresAt.toLocal();
+      final expiresLabel =
+          '${expiresAt.month}/${expiresAt.day} '
+          '${expiresAt.hour.toString().padLeft(2, '0')}:'
+          '${expiresAt.minute.toString().padLeft(2, '0')}';
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: _radarActivityColor(
+                      activity.type,
+                    ).withValues(alpha: 0.12),
+                    foregroundColor: _radarActivityColor(activity.type),
+                    child: Icon(_radarActivityIcon(activity.type)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        LocalizedText(
+                          activity.title,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w900),
+                        ),
+                        LocalizedText(
+                          '${activity.localizedTypeLabel}活動 · ${activity.hostName}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: const Color(0xFF66756D)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              LocalizedText(
+                activity.details.isEmpty ? '未提供活動詳情。' : activity.details,
+              ),
+              const SizedBox(height: 10),
+              LocalizedText(
+                '活動有效至 $expiresLabel',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756D)),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    child: const LocalizedText('關閉'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      onQuoteHostName(activity.hostName);
+                    },
+                    icon: const Icon(Icons.format_quote),
+                    label: const LocalizedText('引用主辦者聊天'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+void _showRadarUserActivities(
+  BuildContext context,
+  RadarContact contact,
+  List<MeshRadarActivity> activities,
+  ValueChanged<String> onQuoteUserName,
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: contact.isSosActive
+                          ? const Color(0xFFFFEEE9)
+                          : const Color(0xFFE0F2E9),
+                      foregroundColor: contact.isSosActive
+                          ? const Color(0xFFB00020)
+                          : const Color(0xFF0D7C66),
+                      child: Icon(
+                        contact.isSosActive
+                            ? Icons.warning_amber
+                            : Icons.person_pin_circle,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          LocalizedText(
+                            '${contact.name} 的活動',
+                            key: const ValueKey('radar-user-activities-title'),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                          LocalizedText(
+                            '${activities.length} 個有效活動',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: const Color(0xFF66756D)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (activities.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFAFBF7),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE0E5DE)),
+                    ),
+                    child: const LocalizedText('這個用戶暫未有活動。'),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: activities.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final activity = activities[index];
+                        return ListTile(
+                          key: ValueKey('radar-user-activity-${activity.id}'),
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundColor: _radarActivityColor(
+                              activity.type,
+                            ).withValues(alpha: 0.12),
+                            foregroundColor: _radarActivityColor(activity.type),
+                            child: Icon(_radarActivityIcon(activity.type)),
+                          ),
+                          title: LocalizedText(
+                            activity.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: LocalizedText(
+                            activity.details.isEmpty
+                                ? activity.localizedTypeLabel
+                                : '${activity.localizedTypeLabel} · ${activity.details}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (context.mounted) {
+                                _showRadarActivityDetails(
+                                  context,
+                                  activity,
+                                  onQuoteUserName,
+                                );
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed: contact.isMe
+                        ? null
+                        : () {
+                            Navigator.of(sheetContext).pop();
+                            onQuoteUserName(contact.name);
+                          },
+                    icon: const Icon(Icons.format_quote),
+                    label: const LocalizedText('引用用戶聊天'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _LightRadarPanel extends StatefulWidget {
   const _LightRadarPanel({
     required this.mesh,
@@ -4994,6 +5621,21 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
         _selectedContactFocusVersion += 1;
       }
     });
+    if (contactId == null) {
+      return;
+    }
+    final matchingContacts = widget.mesh.radarContacts.where(
+      (contact) => contact.id == contactId,
+    );
+    if (matchingContacts.isEmpty) {
+      return;
+    }
+    _showRadarUserActivities(
+      context,
+      matchingContacts.first,
+      widget.mesh.radarActivitiesForHost(contactId),
+      widget.onQuoteContactName,
+    );
   }
 
   void _locate() {
@@ -5004,10 +5646,156 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
     widget.onLocate();
   }
 
+  Future<void> _createActivity() async {
+    if (widget.mesh.myLocation == null) {
+      _locate();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: LocalizedText('正在定位，定位完成後請再開活動。')),
+      );
+      return;
+    }
+
+    final remaining = await widget.mesh.activityCreatesRemainingToday();
+    if (!mounted) {
+      return;
+    }
+    if (remaining == 0) {
+      widget.mesh.setStatus('今天已建立 3 次活動，請於明天再建立。');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: LocalizedText(widget.mesh.status)));
+      return;
+    }
+
+    final draft = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) {
+        var title = '';
+        var details = '';
+        var type = MeshRadarActivity.mutualAidType;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final cleanTitle = title.trim();
+
+            void submit() {
+              if (cleanTitle.isEmpty) {
+                return;
+              }
+              Navigator.of(dialogContext).pop(<String, String>{
+                'title': cleanTitle,
+                'details': details.trim(),
+                'type': type,
+              });
+            }
+
+            return AlertDialog(
+              title: const LocalizedText('建立雷達活動'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      key: const ValueKey('activity-type-input'),
+                      initialValue: type,
+                      decoration: InputDecoration(
+                        labelText: _localizedUiText('活動類型'),
+                        prefixIcon: Icon(Icons.category_outlined),
+                      ),
+                      items: MeshRadarActivity.supportedTypes
+                          .map(
+                            (value) => DropdownMenuItem<String>(
+                              value: value,
+                              child: Row(
+                                children: [
+                                  Icon(_radarActivityIcon(value), size: 18),
+                                  const SizedBox(width: 8),
+                                  LocalizedText(_radarActivityTypeLabel(value)),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() => type = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      key: const ValueKey('activity-title-input'),
+                      autofocus: true,
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: _localizedUiText('活動名稱'),
+                        prefixIcon: Icon(Icons.edit_calendar_outlined),
+                      ),
+                      onChanged: (value) => setDialogState(() => title = value),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      key: const ValueKey('activity-details-input'),
+                      minLines: 2,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.done,
+                      decoration: InputDecoration(
+                        labelText: _localizedUiText('活動詳情 / 集合方式'),
+                        prefixIcon: Icon(Icons.notes_outlined),
+                      ),
+                      onChanged: (value) =>
+                          setDialogState(() => details = value),
+                      onSubmitted: (_) => submit(),
+                    ),
+                    const SizedBox(height: 12),
+                    LocalizedText(
+                      '活動會標記在目前位置，24 小時後自動結束。今日尚可建立 $remaining 次。',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF66756D),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const LocalizedText('取消'),
+                ),
+                FilledButton.icon(
+                  onPressed: cleanTitle.isEmpty ? null : submit,
+                  icon: const Icon(Icons.add_location_alt_outlined),
+                  label: const LocalizedText('建立活動'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (draft == null || !mounted) {
+      return;
+    }
+    await widget.mesh.createRadarActivity(
+      title: draft['title'] ?? '',
+      details: draft['details'] ?? '',
+      type: draft['type'] ?? MeshRadarActivity.mutualAidType,
+    );
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: LocalizedText(widget.mesh.status)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final location = widget.radar.location;
     final contacts = widget.mesh.radarContacts;
+    final activities = widget.mesh.radarActivities;
     final contactIds = contacts.map((contact) => contact.id).toSet();
     final selectedContactId = contactIds.contains(_selectedContactId)
         ? _selectedContactId
@@ -5036,6 +5824,7 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
     final radarMapSignature = _radarMapSignature(
       location: location,
       contacts: contacts,
+      activities: activities,
       nearbyContactIds: nearbyContactIds,
       selectedContactId: selectedContactId,
     );
@@ -5067,6 +5856,8 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                           LocalizedText(
                             sosContacts.isNotEmpty
                                 ? '求救光點 ${sosContacts.length} 個'
+                                : activities.isNotEmpty
+                                ? '雷達活動 ${activities.length} 個'
                                 : nearbyCount == 0
                                 ? effectiveMapMode == _RadarMapMode.online
                                       ? '線上 Google Map'
@@ -5134,6 +5925,12 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                           : const Icon(Icons.my_location),
                       label: const LocalizedText('定位'),
                     ),
+                    OutlinedButton.icon(
+                      key: const ValueKey('create-radar-activity-button'),
+                      onPressed: () => unawaited(_createActivity()),
+                      icon: const Icon(Icons.add_location_alt_outlined),
+                      label: const LocalizedText('開活動'),
+                    ),
                   ],
                 ),
               ],
@@ -5153,6 +5950,7 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                       displayName: widget.mesh.identityName,
                       location: location,
                       contacts: contacts,
+                      activities: activities,
                       nearbyContactIds: nearbyContactIds,
                       locationFocusVersion: _locationFocusVersion,
                       selectedContactId: selectedContactId,
@@ -5163,6 +5961,7 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                   : _OfflineHongKongMap(
                       location: location,
                       contacts: contacts,
+                      activities: activities,
                       nearbyContactIds: nearbyContactIds,
                       refreshSignature: radarMapSignature,
                       locationFocusVersion: _locationFocusVersion,
@@ -5647,6 +6446,7 @@ List<RadarContact> _closestRadarContacts({
 String _radarMapSignature({
   required DeviceLocation? location,
   required List<RadarContact> contacts,
+  required List<MeshRadarActivity> activities,
   required Set<String> nearbyContactIds,
   required String? selectedContactId,
 }) {
@@ -5678,6 +6478,20 @@ String _radarMapSignature({
     _writeLocationSignature(buffer, contact.location);
   }
 
+  final sortedActivities = activities.toList()
+    ..sort((left, right) => left.id.compareTo(right.id));
+  for (final activity in sortedActivities) {
+    buffer
+      ..write('|activity=')
+      ..write(activity.id)
+      ..write(':')
+      ..write(activity.type)
+      ..write(':')
+      ..write(activity.title)
+      ..write(':');
+    _writeLocationSignature(buffer, activity.location);
+  }
+
   return buffer.toString();
 }
 
@@ -5695,10 +6509,83 @@ void _writeLocationSignature(StringBuffer buffer, DeviceLocation? location) {
     ..write(location.accuracyMeters.toStringAsFixed(1));
 }
 
+class _RadarActivityFallbackMarkers extends StatelessWidget {
+  const _RadarActivityFallbackMarkers({
+    required this.activities,
+    required this.onOpenActivity,
+  });
+
+  final List<MeshRadarActivity> activities;
+  final ValueChanged<MeshRadarActivity> onOpenActivity;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          children: [
+            for (var index = 0; index < activities.length; index += 1)
+              _positionedMarker(constraints, activities[index], index),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _positionedMarker(
+    BoxConstraints constraints,
+    MeshRadarActivity activity,
+    int index,
+  ) {
+    const west = 113.80;
+    const east = 114.52;
+    const north = 22.565;
+    const south = 22.14;
+    final x = ((activity.location.longitude - west) / (east - west)).clamp(
+      0.0,
+      1.0,
+    );
+    final y = ((north - activity.location.latitude) / (north - south)).clamp(
+      0.0,
+      1.0,
+    );
+    final offset = (index % 3) * 5.0;
+    final left = (x * constraints.maxWidth - 20 + offset).clamp(
+      0.0,
+      constraints.maxWidth - 40,
+    );
+    final top = (y * constraints.maxHeight - 20 + offset).clamp(
+      36.0,
+      constraints.maxHeight - 40,
+    );
+    final color = _radarActivityColor(activity.type);
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: IconButton.filled(
+        key: ValueKey('radar-fallback-activity-${activity.id}'),
+        tooltip: _localizedUiText(
+          '${activity.localizedTypeLabel}活動：${activity.title}',
+        ),
+        onPressed: () => onOpenActivity(activity),
+        style: IconButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          fixedSize: const Size(40, 40),
+          padding: EdgeInsets.zero,
+        ),
+        icon: Icon(_radarActivityIcon(activity.type), size: 20),
+      ),
+    );
+  }
+}
+
 class _OfflineHongKongMap extends StatefulWidget {
   const _OfflineHongKongMap({
     required this.location,
     required this.contacts,
+    required this.activities,
     required this.nearbyContactIds,
     required this.refreshSignature,
     required this.locationFocusVersion,
@@ -5710,6 +6597,7 @@ class _OfflineHongKongMap extends StatefulWidget {
 
   final DeviceLocation? location;
   final List<RadarContact> contacts;
+  final List<MeshRadarActivity> activities;
   final Set<String> nearbyContactIds;
   final String refreshSignature;
   final int locationFocusVersion;
@@ -5877,6 +6765,54 @@ class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
         ),
       );
     }).toList();
+    markers.addAll(
+      widget.activities.map((activity) {
+        final color = _radarActivityColor(activity.type);
+        return Marker(
+          point: _latLng(activity.location),
+          width: 142,
+          height: 64,
+          alignment: Alignment.topCenter,
+          child: GestureDetector(
+            key: ValueKey('radar-activity-marker-${activity.id}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _showRadarActivityDetails(
+              context,
+              activity,
+              widget.onQuoteContactName,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(_radarActivityIcon(activity.type), size: 34, color: color),
+                Flexible(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xEEFFFFFF),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: color),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: LocalizedText(
+                        '${activity.localizedTypeLabel} · ${activity.title}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
     markers.add(
       Marker(
         point: const LatLng(
@@ -5949,6 +6885,14 @@ class _OfflineHongKongTileMapState extends State<_OfflineHongKongMap> {
                 child: Padding(
                   padding: EdgeInsets.all(8),
                   child: Chip(label: LocalizedText('未匯入街道瓦片：目前顯示概覽圖')),
+                ),
+              ),
+              _RadarActivityFallbackMarkers(
+                activities: widget.activities,
+                onOpenActivity: (activity) => _showRadarActivityDetails(
+                  context,
+                  activity,
+                  widget.onQuoteContactName,
                 ),
               ),
             ],
@@ -6431,6 +7375,7 @@ class _OnlineGoogleRadarMap extends StatefulWidget {
     required this.displayName,
     required this.location,
     required this.contacts,
+    required this.activities,
     required this.nearbyContactIds,
     required this.locationFocusVersion,
     required this.selectedContactId,
@@ -6445,6 +7390,7 @@ class _OnlineGoogleRadarMap extends StatefulWidget {
   final String displayName;
   final DeviceLocation? location;
   final List<RadarContact> contacts;
+  final List<MeshRadarActivity> activities;
   final Set<String> nearbyContactIds;
   final int locationFocusVersion;
   final String? selectedContactId;
@@ -6568,9 +7514,33 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
             final contact = _contactById(contactId);
             if (contact != null && !contact.isMe) {
               widget.onQuoteContactName(contact.name);
+              return;
+            }
+            final activity = _activityById(contactId);
+            if (activity != null) {
+              widget.onQuoteContactName(activity.hostName);
+            }
+            return;
+          case 'activity':
+            final activity = _activityById(contactId);
+            if (activity != null && mounted) {
+              _showRadarActivityDetails(
+                context,
+                activity,
+                widget.onQuoteContactName,
+              );
             }
             return;
           case 'select':
+            final activity = _activityById(contactId);
+            if (activity != null && mounted) {
+              _showRadarActivityDetails(
+                context,
+                activity,
+                widget.onQuoteContactName,
+              );
+              return;
+            }
             widget.onSelectedContactChanged(
               contactId.isEmpty ? null : contactId,
             );
@@ -6639,6 +7609,7 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
     if (!hasMe && location != null) {
       contacts.insert(0, _locationToMap(location));
     }
+    contacts.addAll(widget.activities.map(_activityToMap));
     contacts.add(<String, Object?>{
       'id': _wongTaiSinMeetupId,
       'name': _wongTaiSinMeetupName,
@@ -6701,10 +7672,44 @@ class _OnlineGoogleRadarMapState extends State<_OnlineGoogleRadarMap> {
     };
   }
 
+  Map<String, Object?> _activityToMap(MeshRadarActivity activity) {
+    final color = _radarActivityColor(activity.type);
+    return <String, Object?>{
+      'id': activity.id,
+      'name': activity.title,
+      'lat': activity.location.latitude,
+      'lng': activity.location.longitude,
+      'accuracyMeters': 0.0,
+      'isMe': false,
+      'isSosActive': false,
+      'isNearby': false,
+      'isActivity': true,
+      'activityType': _localizedUiText(activity.localizedTypeLabel),
+      'activityDetails': _localizedUiText(
+        activity.details.isEmpty ? '未提供活動詳情。' : activity.details,
+      ),
+      'hostName': activity.hostName,
+      'activityColor':
+          '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+      'district': _localizedUiText(
+        _districtNameForLocation(activity.location) ?? '未知區域',
+      ),
+    };
+  }
+
   RadarContact? _contactById(String selectedContactId) {
     for (final contact in widget.contacts) {
       if (contact.id == selectedContactId) {
         return contact;
+      }
+    }
+    return null;
+  }
+
+  MeshRadarActivity? _activityById(String activityId) {
+    for (final activity in widget.activities) {
+      if (activity.id == activityId) {
+        return activity;
       }
     }
     return null;
@@ -7196,13 +8201,21 @@ String _googleRadarMapHtml({
       const isNearby = contact.isNearby === true;
       const isSosActive = contact.isSosActive === true;
       const isMeetup = contact.isMeetup === true;
+      const isActivity = contact.isActivity === true;
+      const activityColor = contact.activityColor
+        ? String(contact.activityColor)
+        : '#0d7c66';
       return {
         map,
         position,
-        title: isSosActive
+        title: isActivity
+          ? String(contact.activityType || '') + ' · ' + String(contact.name || '')
+          : isSosActive
           ? ui.sosPrefix + String(contact.name || ui.lightPoint)
           : String(contact.name || ui.lightPoint),
-        label: isMeetup
+        label: isActivity
+          ? { text: String(contact.activityType || ''), color: '#ffffff', fontWeight: '900' }
+          : isMeetup
           ? { text: ui.meetup, color: '#5d4037', fontWeight: '900' }
           : isSosActive
           ? { text: 'SOS', color: '#ffffff', fontWeight: '900' }
@@ -7213,16 +8226,18 @@ String _googleRadarMapHtml({
             : null,
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
-          scale: isMeetup ? 12 : isSosActive ? 13 : isMe ? 12 : 9,
-          fillColor: isSosActive
+          scale: isActivity ? 13 : isMeetup ? 12 : isSosActive ? 13 : isMe ? 12 : 9,
+          fillColor: isActivity
+            ? activityColor
+            : isSosActive
             ? '#b00020'
             : isMeetup ? '#f9a825'
             : isMe ? '#0d7c66' : isNearby ? '#d73535' : '#1f6feb',
           fillOpacity: 1,
           strokeColor: isSosActive ? '#ffdad6' : '#ffffff',
-          strokeWeight: isSosActive ? 4 : 3
+          strokeWeight: isSosActive || isActivity ? 4 : 3
         },
-        zIndex: isMeetup ? 25 : isSosActive ? 30 : isMe ? 20 : isNearby ? 15 : 10
+        zIndex: isActivity ? 24 : isMeetup ? 25 : isSosActive ? 30 : isMe ? 20 : isNearby ? 15 : 10
       };
     }
 
@@ -7244,6 +8259,14 @@ String _googleRadarMapHtml({
         marker = new google.maps.Marker(markerOptions(contact, position));
         marker.addListener('click', () => {
           openInfo(marker, markerContacts[id]);
+          if (markerContacts[id]?.isActivity === true) {
+            meetupFocused = false;
+            locationFocused = false;
+            map.panTo(marker.getPosition());
+            map.setZoom(Math.max(map.getZoom() || 11, 15));
+            postActivity(id);
+            return;
+          }
           if (markerContacts[id]?.isMeetup === true) {
             meetupFocused = true;
             locationFocused = false;
@@ -7293,9 +8316,14 @@ String _googleRadarMapHtml({
       }
       const name = String(contact.name || ui.lightPoint);
       const isSosActive = contact.isSosActive === true;
+      const isActivity = contact.isActivity === true;
       const district = contact.district ? String(contact.district) : ui.unknownDistrict;
       const accuracy = Math.round(Number(contact.accuracyMeters || 0));
-      const meta = accuracy > 0
+      const meta = isActivity
+        ? String(contact.hostName || '') + (contact.activityDetails
+            ? ' · ' + String(contact.activityDetails)
+            : '')
+        : accuracy > 0
         ? district + ' · +/- ' + accuracy + 'm'
         : district;
 
@@ -7310,7 +8338,12 @@ String _googleRadarMapHtml({
 
       const title = document.createElement('div');
       title.className = 'info-title';
-      title.textContent = isSosActive ? ui.sosPrefix + name : name;
+      title.textContent = isActivity
+        ? String(contact.activityType || '') + ' · ' + name
+        : isSosActive ? ui.sosPrefix + name : name;
+      if (isActivity && contact.activityColor) {
+        title.style.color = String(contact.activityColor);
+      }
       if (isSosActive) {
         title.style.color = '#b00020';
       }
@@ -7367,6 +8400,15 @@ String _googleRadarMapHtml({
         window.RadarBridge.postMessage(JSON.stringify({
           action: 'quote',
           contactId: String(contactId || '')
+        }));
+      }
+    }
+
+    function postActivity(activityId) {
+      if (window.RadarBridge && window.RadarBridge.postMessage) {
+        window.RadarBridge.postMessage(JSON.stringify({
+          action: 'activity',
+          contactId: String(activityId || '')
         }));
       }
     }
@@ -9737,7 +10779,7 @@ class _EmptyWireless extends StatelessWidget {
   }
 }
 
-enum _ChatToolsTab { users, rooms, supplies }
+enum _ChatToolsTab { users, help, rooms, supplies }
 
 enum _UserModerationAction { report, block }
 
@@ -9750,6 +10792,7 @@ class _ChatPanel extends StatefulWidget {
     required this.scrollController,
     required this.onSend,
     required this.onCreateRoom,
+    required this.onCreateHelpRequest,
     required this.onShareSupply,
     required this.onQuoteUserName,
     required this.onEditUserName,
@@ -9765,6 +10808,7 @@ class _ChatPanel extends StatefulWidget {
   final ScrollController scrollController;
   final Future<void> Function() onSend;
   final Future<void> Function() onCreateRoom;
+  final Future<void> Function() onCreateHelpRequest;
   final Future<void> Function() onShareSupply;
   final ValueChanged<String> onQuoteUserName;
   final VoidCallback onEditUserName;
@@ -9855,6 +10899,14 @@ class _ChatPanelState extends State<_ChatPanel> {
         onSelectRoom: widget.mesh.setActiveRoom,
         onCreateRoom: widget.onCreateRoom,
       ),
+      _ChatToolsTab.help => _HelpRequestStrip(
+        key: const ValueKey('chat-tools-help'),
+        requests: widget.mesh.helpRequests,
+        onCreateHelpRequest: widget.onCreateHelpRequest,
+        onQuoteUserName: widget.onQuoteUserName,
+        canMarkResolved: widget.mesh.canMarkHelpRequestResolved,
+        onMarkResolved: widget.mesh.markHelpRequestResolved,
+      ),
       _ChatToolsTab.supplies => _SupplyShareStrip(
         key: const ValueKey('chat-tools-supplies'),
         supplies: widget.mesh.supplies,
@@ -9871,6 +10923,8 @@ class _ChatPanelState extends State<_ChatPanel> {
   Widget build(BuildContext context) {
     final activeRoom = widget.mesh.activeRoom;
     final messages = widget.mesh.activeRoomMessages;
+    final isEnglish =
+        _AppLanguageScope.of(context).language == AppLanguage.english;
     _observeMessages(activeRoom, messages);
 
     return Card(
@@ -9929,21 +10983,26 @@ class _ChatPanelState extends State<_ChatPanel> {
                     segments: [
                       ButtonSegment<_ChatToolsTab>(
                         value: _ChatToolsTab.users,
-                        icon: const Icon(Icons.people_alt_outlined, size: 16),
+                        icon: const Icon(Icons.people_alt_outlined),
                         label: LocalizedText(
-                          _tr(context, 'Online', '在線用家', '在线用户'),
+                          _tr(context, 'Online', '在線', '在线'),
                         ),
                       ),
                       ButtonSegment<_ChatToolsTab>(
+                        value: _ChatToolsTab.help,
+                        icon: const Icon(Icons.support_agent),
+                        label: LocalizedText(_tr(context, 'Help', '求助', '求助')),
+                      ),
+                      ButtonSegment<_ChatToolsTab>(
                         value: _ChatToolsTab.rooms,
-                        icon: const Icon(Icons.bubble_chart_outlined, size: 16),
+                        icon: const Icon(Icons.bubble_chart_outlined),
                         label: LocalizedText(
                           _tr(context, 'Groups', '光團', '光团'),
                         ),
                       ),
                       ButtonSegment<_ChatToolsTab>(
                         value: _ChatToolsTab.supplies,
-                        icon: const Icon(Icons.inventory_2_outlined, size: 16),
+                        icon: const Icon(Icons.inventory_2_outlined),
                         label: LocalizedText(
                           _tr(context, 'Supplies', '物資', '物资'),
                         ),
@@ -9955,6 +11014,15 @@ class _ChatPanelState extends State<_ChatPanel> {
                     },
                     style: SegmentedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
+                      iconSize: 12,
+                      textStyle: TextStyle(
+                        fontSize: isEnglish ? 9 : 11,
+                        fontWeight: FontWeight.w600,
+                        height: 1,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      minimumSize: const Size(0, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
                 ),
@@ -10051,48 +11119,61 @@ class _OnlineUsersStrip extends StatelessWidget {
       children: [
         Row(
           children: [
-            if (showTitle) ...[
-              const Icon(Icons.people_alt_outlined, size: 16),
-              const SizedBox(width: 6),
-              LocalizedText(
-                '在線用家',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+            Expanded(
+              child: Row(
+                children: [
+                  if (showTitle) ...[
+                    const Icon(Icons.people_alt_outlined, size: 16),
+                    const SizedBox(width: 6),
+                    LocalizedText(
+                      '在線用家',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Flexible(
+                    child: LocalizedText(
+                      '$onlineCount 人在線',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF66756D),
+                      ),
+                    ),
+                  ),
+                  if (sosCount > 0) ...[
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.warning_amber,
+                      size: 16,
+                      color: Color(0xFFB00020),
+                    ),
+                    const SizedBox(width: 3),
+                    LocalizedText(
+                      '求救 $sosCount',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFFB00020),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(width: 8),
-            ],
-            LocalizedText(
-              '$onlineCount 人在線',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756D)),
             ),
-            if (sosCount > 0) ...[
-              const SizedBox(width: 8),
-              const Icon(
-                Icons.warning_amber,
-                size: 16,
-                color: Color(0xFFB00020),
-              ),
-              const SizedBox(width: 3),
-              LocalizedText(
-                '求救 $sosCount',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFFB00020),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-            const Spacer(),
+            const SizedBox(width: 4),
             TextButton.icon(
               key: const ValueKey('online-user-list-button'),
               onPressed: () => _openOnlineUserList(context),
-              icon: const Icon(Icons.manage_search, size: 16),
-              label: const LocalizedText('找人'),
+              icon: const Icon(Icons.manage_search, size: 14),
+              label: LocalizedText(
+                _tr(context, 'Find', '找人', '找人'),
+                style: const TextStyle(fontSize: 11),
+              ),
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
                 minimumSize: const Size(0, 32),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
@@ -10684,6 +11765,291 @@ class _RoomSelector extends StatelessWidget {
   }
 }
 
+class _HelpRequestStrip extends StatelessWidget {
+  const _HelpRequestStrip({
+    super.key,
+    required this.requests,
+    required this.onCreateHelpRequest,
+    required this.onQuoteUserName,
+    required this.canMarkResolved,
+    required this.onMarkResolved,
+  });
+
+  final List<MeshHelpRequest> requests;
+  final Future<void> Function() onCreateHelpRequest;
+  final ValueChanged<String> onQuoteUserName;
+  final bool Function(MeshHelpRequest request) canMarkResolved;
+  final ValueChanged<String> onMarkResolved;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        LocalizedText(
+          '${requests.length} 項求助',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: const Color(0xFF66756D)),
+        ),
+        const Spacer(),
+        TextButton.icon(
+          key: const ValueKey('help-list-button'),
+          onPressed: () => _openHelpList(context),
+          icon: const Icon(Icons.manage_search, size: 16),
+          label: const LocalizedText('尋找求助'),
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: const Size(0, 32),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+        const SizedBox(width: 6),
+        OutlinedButton.icon(
+          key: const ValueKey('create-help-button'),
+          onPressed: () => unawaited(onCreateHelpRequest()),
+          icon: const Icon(Icons.add_alert_outlined, size: 16),
+          label: const LocalizedText('新增求助'),
+          style: OutlinedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openHelpList(BuildContext context) {
+    var query = '';
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final cleanQuery = query.trim();
+            final filteredRequests = cleanQuery.isEmpty
+                ? requests
+                : requests
+                      .where(
+                        (request) =>
+                            _matchesHelpRequestQuery(request, cleanQuery),
+                      )
+                      .toList();
+            final bottomInset = MediaQuery.viewInsetsOf(sheetContext).bottom;
+            final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.75;
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomInset),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.support_agent,
+                            size: 18,
+                            color: Color(0xFF0D7C66),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: LocalizedText(
+                              '求助列表',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          LocalizedText(
+                            '${filteredRequests.length}/${requests.length}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: const Color(0xFF66756D)),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: _localizedUiText('關閉'),
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        key: const ValueKey('help-search-input'),
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          labelText: _localizedUiText('搜尋求助、地點或求助者'),
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (value) {
+                          setSheetState(() => query = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (filteredRequests.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFAFBF7),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFE0E5DE)),
+                          ),
+                          child: LocalizedText(
+                            requests.isEmpty ? '暫未有人求助。' : '找不到符合的求助。',
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: filteredRequests.length,
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final request = filteredRequests[index];
+                              return _HelpRequestListTile(
+                                request: request,
+                                canMarkResolved: canMarkResolved(request),
+                                onQuoteUserName: () {
+                                  Navigator.of(sheetContext).pop();
+                                  onQuoteUserName(request.requesterName);
+                                },
+                                onMarkResolved: () {
+                                  Navigator.of(sheetContext).pop();
+                                  onMarkResolved(request.id);
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  static bool _matchesHelpRequestQuery(MeshHelpRequest request, String query) {
+    return request.title.contains(query) ||
+        request.details.contains(query) ||
+        request.requesterName.contains(query);
+  }
+}
+
+class _HelpRequestListTile extends StatelessWidget {
+  const _HelpRequestListTile({
+    required this.request,
+    required this.canMarkResolved,
+    required this.onQuoteUserName,
+    required this.onMarkResolved,
+  });
+
+  final MeshHelpRequest request;
+  final bool canMarkResolved;
+  final VoidCallback onQuoteUserName;
+  final VoidCallback onMarkResolved;
+
+  @override
+  Widget build(BuildContext context) {
+    final details = request.details.isEmpty ? '未列地點或補充資料' : request.details;
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        radius: 18,
+        backgroundColor: request.isSosActive
+            ? const Color(0xFFFFEEE9)
+            : const Color(0xFFE0F2E9),
+        child: Icon(
+          request.isSosActive ? Icons.sos : Icons.support_agent,
+          size: 18,
+          color: request.isSosActive
+              ? const Color(0xFFB00020)
+              : const Color(0xFF0D7C66),
+        ),
+      ),
+      title: Row(
+        children: [
+          if (request.isSosActive) ...[
+            const _SosPriorityBadge(),
+            const SizedBox(width: 6),
+          ],
+          Expanded(
+            child: LocalizedText(
+              request.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+      subtitle: LocalizedText(
+        '$details\n${request.requesterName} · ${_formatHelpTime(request.createdAt)}',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Wrap(
+        spacing: 4,
+        children: [
+          IconButton(
+            tooltip: _localizedUiText('引用求助者名稱聊天'),
+            onPressed: onQuoteUserName,
+            icon: const Icon(Icons.alternate_email),
+          ),
+          if (canMarkResolved)
+            IconButton(
+              tooltip: _localizedUiText('標記已解決'),
+              onPressed: onMarkResolved,
+              icon: const Icon(Icons.task_alt),
+            ),
+        ],
+      ),
+      onTap: onQuoteUserName,
+    );
+  }
+
+  static String _formatHelpTime(DateTime time) {
+    final local = time.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+}
+
+class _SosPriorityBadge extends StatelessWidget {
+  const _SosPriorityBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFB00020),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const material.Text(
+        'SOS',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
 class _SupplyShareStrip extends StatelessWidget {
   const _SupplyShareStrip({
     super.key,
@@ -10744,8 +12110,8 @@ class _SupplyShareStrip extends StatelessWidget {
             const SizedBox(width: 6),
             OutlinedButton.icon(
               onPressed: () => unawaited(onShareSupply()),
-              icon: const Icon(Icons.add, size: 16),
-              label: const LocalizedText('分享物資'),
+              icon: const Icon(Icons.swap_horiz, size: 16),
+              label: const LocalizedText('分享 / 交換'),
               style: OutlinedButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -10889,6 +12255,9 @@ class _SupplyShareStrip extends StatelessWidget {
     return supply.title.contains(query) ||
         supply.quantity.contains(query) ||
         supply.note.contains(query) ||
+        supply.exchangeFor.contains(query) ||
+        (supply.isExchange && '交換物資'.contains(query)) ||
+        (!supply.isExchange && '免費分享'.contains(query)) ||
         supply.offeredByName.contains(query);
   }
 }
@@ -10910,16 +12279,27 @@ class _SupplyListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final quantity = supply.quantity.isEmpty ? '未列數量' : supply.quantity;
     final note = supply.note.isEmpty ? '未列交收資料' : supply.note;
+    final exchangeDetails = supply.isExchange
+        ? supply.exchangeFor.isEmpty
+              ? '交換物資'
+              : '希望交換：${supply.exchangeFor}'
+        : '免費分享';
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: const CircleAvatar(
+      leading: CircleAvatar(
         radius: 18,
-        backgroundColor: Color(0xFFE0F2E9),
+        backgroundColor: supply.isExchange
+            ? const Color(0xFFFFF3D6)
+            : const Color(0xFFE0F2E9),
         child: Icon(
-          Icons.volunteer_activism_outlined,
+          supply.isExchange
+              ? Icons.swap_horiz
+              : Icons.volunteer_activism_outlined,
           size: 18,
-          color: Color(0xFF0D7C66),
+          color: supply.isExchange
+              ? const Color(0xFF8A5A00)
+              : const Color(0xFF0D7C66),
         ),
       ),
       title: LocalizedText(
@@ -10929,7 +12309,7 @@ class _SupplyListTile extends StatelessWidget {
         style: const TextStyle(fontWeight: FontWeight.w800),
       ),
       subtitle: LocalizedText(
-        '$quantity · $note\n${supply.offeredByName} · ${_formatShortTime(supply.createdAt)}',
+        '$exchangeDetails · $quantity · $note\n${supply.offeredByName} · ${_formatShortTime(supply.createdAt)}',
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
@@ -12058,6 +13438,8 @@ class MeshChatService extends ChangeNotifier {
   static const String _chatKind = 'aieco.light.chat.v1';
   static const String _roomKind = 'aieco.light.room.v1';
   static const String _locationKind = 'aieco.light.location.v1';
+  static const String _activityKind = 'aieco.light.activity.v1';
+  static const String _helpKind = 'aieco.light.help.v1';
   static const String _supplyKind = 'aieco.light.supply.v1';
   static const String _creditKind = 'aieco.light.credit.v1';
   static const String _adminKind = 'aieco.light.admin.v1';
@@ -12072,6 +13454,8 @@ class MeshChatService extends ChangeNotifier {
   static const String _blockedUserNamesPrefsKey = 'mesh.blockedUserNames';
   static const String _hiddenMessagesPrefsKey = 'mesh.hiddenMessages';
   static const String _moderationReportsPrefsKey = 'mesh.moderationReports';
+  static const String _activityDailyDatePrefsKey = 'mesh.activityDailyDate';
+  static const String _activityDailyCountPrefsKey = 'mesh.activityDailyCount';
   static const String _accountDeletionLastAtPrefsKey =
       'mesh.accountDeletionLastAt';
   static const List<String> _accountDataPrefsKeys = <String>[
@@ -12084,6 +13468,7 @@ class MeshChatService extends ChangeNotifier {
     _hiddenMessagesPrefsKey,
     _moderationReportsPrefsKey,
   ];
+  static const int maxActivitiesPerDay = 3;
   static const int _maxStoredModerationReports = 80;
   static const Duration _accountDeletionCooldown = Duration(days: 1);
   static const Duration _announcementInterval = Duration(seconds: 4);
@@ -12128,7 +13513,11 @@ class MeshChatService extends ChangeNotifier {
   String _nodeId;
   final Map<String, MeshPeer> _peers = <String, MeshPeer>{};
   final Map<String, RadarContact> _peerLocations = <String, RadarContact>{};
+  final Map<String, MeshRadarActivity> _activities =
+      <String, MeshRadarActivity>{};
   final Map<String, MeshRoom> _rooms = <String, MeshRoom>{};
+  final Map<String, MeshHelpRequest> _helpRequests =
+      <String, MeshHelpRequest>{};
   final Map<String, MeshSupply> _supplies = <String, MeshSupply>{};
   final Map<String, MeshCreditVote> _creditVotes = <String, MeshCreditVote>{};
   final List<MeshMessage> _messages = <MeshMessage>[];
@@ -12145,6 +13534,8 @@ class MeshChatService extends ChangeNotifier {
   final Set<String> _adminDeletedMessageIds = <String>{};
   final Set<String> _adminDeletedRoomIds = <String>{};
   final Set<String> _adminDeletedSupplyIds = <String>{};
+  final Set<String> _adminDeletedActivityIds = <String>{};
+  final Set<String> _supersededActivityIds = <String>{};
   final Set<String> _seenAdminActionIds = <String>{};
 
   ServerSocket? _tcpServer;
@@ -12175,6 +13566,8 @@ class MeshChatService extends ChangeNotifier {
   DateTime? _eulaAcceptedAt;
   MeshMessage? _lastIncomingMessage;
   int _incomingMessageVersion = 0;
+  String _activityCreationDate = '';
+  int _activityCreationCount = 0;
 
   bool get isRunning => _isRunning;
   MeshNetworkMode get networkMode => _networkMode;
@@ -12201,11 +13594,13 @@ class MeshChatService extends ChangeNotifier {
 
   static String adminPasswordForNow() => '${_hongKongDateKey()}1314';
 
-  static String _hongKongDateKey() {
-    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
-    return '${now.year.toString().padLeft(4, '0')}'
-        '${now.month.toString().padLeft(2, '0')}'
-        '${now.day.toString().padLeft(2, '0')}';
+  static String _hongKongDateKey() => _hongKongDateKeyFor(DateTime.now());
+
+  static String _hongKongDateKeyFor(DateTime time) {
+    final hongKongTime = time.toUtc().add(const Duration(hours: 8));
+    return '${hongKongTime.year.toString().padLeft(4, '0')}'
+        '${hongKongTime.month.toString().padLeft(2, '0')}'
+        '${hongKongTime.day.toString().padLeft(2, '0')}';
   }
 
   static String _adminProofForDate(String date) {
@@ -12298,6 +13693,26 @@ class MeshChatService extends ChangeNotifier {
     return List<RadarContact>.unmodifiable(contacts);
   }
 
+  List<MeshRadarActivity> get radarActivities {
+    final now = DateTime.now();
+    final values =
+        _activities.values
+            .where(
+              (activity) =>
+                  !activity.isExpired(now) &&
+                  !_blockedUserIds.contains(activity.hostId),
+            )
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return List<MeshRadarActivity>.unmodifiable(values);
+  }
+
+  List<MeshRadarActivity> radarActivitiesForHost(String hostId) {
+    return List<MeshRadarActivity>.unmodifiable(
+      radarActivities.where((activity) => activity.hostId == hostId),
+    );
+  }
+
   bool _isActivePeerLocation(RadarContact contact, DateTime now) {
     if (now.difference(contact.lastSeen) > _locationTtl) {
       return false;
@@ -12346,22 +13761,66 @@ class MeshChatService extends ChangeNotifier {
           // update it continuously and can move another user under a pointer
           // between press and release. A node id is stable for the identity, so it
           // also keeps like and moderation targets in a deterministic position.
-          ..sort((a, b) => a.id.compareTo(b.id));
-    final values = <MeshOnlineUser>[
-      MeshOnlineUser(
-        id: _nodeId,
-        name: identityName,
-        displayName: _displayName,
-        userName: _userName,
-        isMe: true,
-        lastSeen: DateTime.now(),
-        creditScore: creditScoreFor(_nodeId),
-        likedByMe: false,
-        isSosActive: _sosActive,
-      ),
-      ...peerUsers,
-    ];
+          ..sort((a, b) {
+            final sosCompare = b.isSosActive ? (a.isSosActive ? 0 : 1) : -1;
+            if (a.isSosActive != b.isSosActive) {
+              return sosCompare;
+            }
+            return a.id.compareTo(b.id);
+          });
+    final values =
+        <MeshOnlineUser>[
+          MeshOnlineUser(
+            id: _nodeId,
+            name: identityName,
+            displayName: _displayName,
+            userName: _userName,
+            isMe: true,
+            lastSeen: DateTime.now(),
+            creditScore: creditScoreFor(_nodeId),
+            likedByMe: false,
+            isSosActive: _sosActive,
+          ),
+          ...peerUsers,
+        ]..sort((a, b) {
+          if (a.isSosActive != b.isSosActive) {
+            return a.isSosActive ? -1 : 1;
+          }
+          if (a.isMe != b.isMe) {
+            return a.isMe ? -1 : 1;
+          }
+          return a.id.compareTo(b.id);
+        });
     return List<MeshOnlineUser>.unmodifiable(values);
+  }
+
+  List<MeshHelpRequest> get helpRequests {
+    final values =
+        _helpRequests.values
+            .where(
+              (request) =>
+                  !request.isResolved &&
+                  !_blockedUserIds.contains(request.requesterId),
+            )
+            .map((request) {
+              final currentSosActive = request.requesterId == _nodeId
+                  ? _sosActive
+                  : _peers[request.requesterId]?.sosActive ??
+                        request.isSosActive;
+              return request.withSosActive(currentSosActive);
+            })
+            .toList()
+          ..sort((a, b) {
+            if (a.isSosActive != b.isSosActive) {
+              return a.isSosActive ? -1 : 1;
+            }
+            return b.createdAt.compareTo(a.createdAt);
+          });
+    return List<MeshHelpRequest>.unmodifiable(values);
+  }
+
+  bool canMarkHelpRequestResolved(MeshHelpRequest request) {
+    return request.requesterId == _nodeId && !request.isResolved;
   }
 
   List<MeshSupply> get supplies {
@@ -12602,6 +14061,10 @@ class MeshChatService extends ChangeNotifier {
       createdAt: DateTime.fromMillisecondsSinceEpoch(0),
     );
     _supplies.clear();
+    _helpRequests.clear();
+    _activities.clear();
+    _activityCreationDate = '';
+    _activityCreationCount = 0;
     _creditVotes.clear();
     _messages.clear();
     _lastIncomingMessage = null;
@@ -13176,6 +14639,8 @@ class MeshChatService extends ChangeNotifier {
     required String title,
     required String quantity,
     required String note,
+    String type = MeshSupply.shareType,
+    String exchangeFor = '',
   }) {
     final cleanTitle = title.trim();
     if (cleanTitle.isEmpty) {
@@ -13185,7 +14650,7 @@ class MeshChatService extends ChangeNotifier {
     }
 
     final moderation = MeshContentModeration.check(
-      [cleanTitle, quantity.trim(), note.trim()].join(' '),
+      [cleanTitle, quantity.trim(), note.trim(), exchangeFor.trim()].join(' '),
     );
     if (!moderation.allowed) {
       _status = moderation.reason;
@@ -13204,14 +14669,83 @@ class MeshChatService extends ChangeNotifier {
       createdAt: now,
       updatedAt: now,
       status: MeshSupply.availableStatus,
+      type: type == MeshSupply.exchangeType
+          ? MeshSupply.exchangeType
+          : MeshSupply.shareType,
+      exchangeFor: exchangeFor.trim(),
     );
     _rememberSupply(supply);
-    _status = '已分享物資：${supply.title}';
+    _status = supply.isExchange
+        ? '已發布交換物資：${supply.title}'
+        : '已分享物資：${supply.title}';
     notifyListeners();
 
     final packet = supply.toPacket(hops: 0);
     unawaited(_sendLocalPacket(packet));
     return true;
+  }
+
+  bool createHelpRequest({required String title, required String details}) {
+    final cleanTitle = title.trim();
+    if (cleanTitle.isEmpty) {
+      _status = '請先輸入求助內容。';
+      notifyListeners();
+      return false;
+    }
+
+    final moderation = MeshContentModeration.check(
+      [cleanTitle, details.trim()].join(' '),
+    );
+    if (!moderation.allowed) {
+      _status = moderation.reason;
+      notifyListeners();
+      return false;
+    }
+
+    final now = DateTime.now();
+    final request = MeshHelpRequest(
+      id: _newId('help'),
+      title: cleanTitle,
+      details: details.trim(),
+      requesterId: _nodeId,
+      requesterName: identityName,
+      createdAt: now,
+      updatedAt: now,
+      status: MeshHelpRequest.activeStatus,
+      isSosActive: _sosActive,
+    );
+    _rememberHelpRequest(request);
+    _status = '已發布求助：${request.title}';
+    notifyListeners();
+
+    unawaited(_sendLocalPacket(request.toPacket(hops: 0)));
+    return true;
+  }
+
+  void markHelpRequestResolved(String requestId) {
+    final request = _helpRequests[requestId];
+    if (request == null) {
+      _status = '找不到這項求助。';
+      notifyListeners();
+      return;
+    }
+    if (request.requesterId != _nodeId) {
+      _status = '只有求助者可以標記為已解決。';
+      notifyListeners();
+      return;
+    }
+    if (request.isResolved) {
+      _status = '這項求助已標記為已解決。';
+      notifyListeners();
+      return;
+    }
+
+    final updated = request.markResolved(isSosActive: _sosActive);
+    _rememberHelpRequest(updated);
+    _status = '已將 ${request.title} 標記為已解決。';
+    notifyListeners();
+
+    unawaited(_sendLocalPacket(updated.toPacket(hops: 0)));
   }
 
   void markSupplyTaken(String supplyId) {
@@ -13404,6 +14938,12 @@ class MeshChatService extends ChangeNotifier {
     _broadcastAdminAction('deleteSupply', supplyId);
   }
 
+  void adminDeleteActivity(String activityId) {
+    if (!_activities.containsKey(activityId)) return;
+    _applyAdminAction('deleteActivity', activityId);
+    _broadcastAdminAction('deleteActivity', activityId);
+  }
+
   void adminSetUserMuted(String userId, {required bool muted}) {
     if (userId.isEmpty || userId == _nodeId) return;
     final action = muted ? 'muteUser' : 'unmuteUser';
@@ -13448,6 +14988,9 @@ class MeshChatService extends ChangeNotifier {
       case 'deleteSupply':
         _adminDeletedSupplyIds.add(targetId);
         changed = _supplies.remove(targetId) != null;
+      case 'deleteActivity':
+        _adminDeletedActivityIds.add(targetId);
+        changed = _activities.remove(targetId) != null;
       case 'muteUser':
         changed = _mutedUserIds.add(targetId);
       case 'unmuteUser':
@@ -13462,6 +15005,112 @@ class MeshChatService extends ChangeNotifier {
   void setStatus(String value) {
     _status = value;
     notifyListeners();
+  }
+
+  Future<int> activityCreatesRemainingToday() async {
+    await _loadActivityQuotaForToday();
+    return (maxActivitiesPerDay - _activityCreationCount).clamp(
+      0,
+      maxActivitiesPerDay,
+    );
+  }
+
+  Future<bool> createRadarActivity({
+    required String title,
+    required String details,
+    required String type,
+  }) async {
+    final location = _myLocation;
+    if (location == null) {
+      _status = '請先在光之雷達定位，才可建立活動。';
+      notifyListeners();
+      return false;
+    }
+
+    final cleanTitle = title.trim();
+    final cleanDetails = details.trim();
+    if (cleanTitle.isEmpty) {
+      _status = '請先輸入活動名稱。';
+      notifyListeners();
+      return false;
+    }
+
+    final moderation = MeshContentModeration.check(
+      [cleanTitle, cleanDetails].join(' '),
+    );
+    if (!moderation.allowed) {
+      _status = moderation.reason;
+      notifyListeners();
+      return false;
+    }
+
+    await _loadActivityQuotaForToday();
+    if (_activityCreationCount >= maxActivitiesPerDay) {
+      _status = '今天已建立 3 次活動，請於明天再建立。';
+      notifyListeners();
+      return false;
+    }
+
+    var now = DateTime.now();
+    for (final known in _activities.values.where(
+      (activity) => activity.hostId == _nodeId,
+    )) {
+      if (!now.isAfter(known.createdAt)) {
+        now = known.createdAt.add(const Duration(microseconds: 1));
+      }
+    }
+    final activity = MeshRadarActivity(
+      id: _newId('activity'),
+      title: cleanTitle,
+      details: cleanDetails,
+      type: MeshRadarActivity.normalizeType(type),
+      hostId: _nodeId,
+      hostName: identityName,
+      location: location,
+      createdAt: now,
+      expiresAt: now.add(MeshRadarActivity.defaultLifetime),
+    );
+    _rememberActivity(activity);
+    _activityCreationCount += 1;
+    unawaited(_saveActivityQuota());
+    _status =
+        '已建立${activity.localizedTypeLabel}活動：${activity.title}（今日尚可建立 ${maxActivitiesPerDay - _activityCreationCount} 次）';
+    notifyListeners();
+
+    unawaited(_sendLocalPacket(activity.toPacket(hops: 0)));
+    return true;
+  }
+
+  Future<void> _loadActivityQuotaForToday() async {
+    final today = _hongKongDateKey();
+    if (_activityCreationDate == today) {
+      return;
+    }
+
+    _activityCreationDate = today;
+    _activityCreationCount = 0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString(_activityDailyDatePrefsKey) == today) {
+        _activityCreationCount =
+            (prefs.getInt(_activityDailyCountPrefsKey) ?? 0).clamp(
+              0,
+              maxActivitiesPerDay,
+            );
+      }
+    } on Object {
+      // Tests and unsupported platforms may not have the preferences plugin.
+    }
+  }
+
+  Future<void> _saveActivityQuota() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_activityDailyDatePrefsKey, _activityCreationDate);
+      await prefs.setInt(_activityDailyCountPrefsKey, _activityCreationCount);
+    } on Object {
+      // Tests and unsupported platforms may not have the preferences plugin.
+    }
   }
 
   void updateLocation(DeviceLocation location) {
@@ -13497,6 +15146,16 @@ class MeshChatService extends ChangeNotifier {
     }
 
     _sosActive = active;
+    final updatedHelpRequests = _helpRequests.values
+        .where(
+          (request) => request.requesterId == _nodeId && !request.isResolved,
+        )
+        .map((request) => request.withSosActive(active, touchUpdatedAt: true))
+        .toList();
+    for (final request in updatedHelpRequests) {
+      _helpRequests[request.id] = request;
+      unawaited(_sendLocalPacket(request.toPacket(hops: 0)));
+    }
     _status = active ? 'SOS 燈已啟動，正在顯示求救光點。' : 'SOS 燈已停止。';
     notifyListeners();
 
@@ -13625,6 +15284,14 @@ class MeshChatService extends ChangeNotifier {
           effectiveRemoteHost,
           fromOnline: fromOnline,
         );
+      case _activityKind:
+        _handleActivityPacket(
+          packet,
+          effectiveRemoteHost,
+          fromOnline: fromOnline,
+        );
+      case _helpKind:
+        _handleHelpPacket(packet, effectiveRemoteHost, fromOnline: fromOnline);
       case _supplyKind:
         _handleSupplyPacket(
           packet,
@@ -13681,6 +15348,8 @@ class MeshChatService extends ChangeNotifier {
     final peerId =
         _stringValue(packet['nodeId']) ??
         _stringValue(packet['senderId']) ??
+        _stringValue(packet['hostId']) ??
+        _stringValue(packet['requesterId']) ??
         _stringValue(packet['offeredById']) ??
         _stringValue(packet['voterId']);
     return peerId == null ? 'online-relay' : 'online:$peerId';
@@ -13751,6 +15420,8 @@ class MeshChatService extends ChangeNotifier {
       sosActive: sosActive,
     );
     _rememberRoomsFromList(packet['rooms']);
+    _rememberActivitiesFromList(packet['activities']);
+    _rememberHelpRequestsFromList(packet['helpRequests']);
     _rememberSuppliesFromList(packet['supplies']);
     _rememberCreditVotesFromList(packet['creditVotes']);
     _rememberLocationFromMap(
@@ -14008,6 +15679,92 @@ class MeshChatService extends ChangeNotifier {
     );
   }
 
+  void _handleActivityPacket(
+    Map<String, dynamic> packet,
+    String remoteHost, {
+    bool fromOnline = false,
+  }) {
+    final activity = MeshRadarActivity.fromMap(
+      Map<String, Object?>.from(packet),
+    );
+    if (activity == null ||
+        _adminDeletedActivityIds.contains(activity.id) ||
+        activity.isExpired(DateTime.now()) ||
+        _blockedUserIds.contains(activity.hostId)) {
+      return;
+    }
+
+    final senderPort = _intValue(packet['tcpPort']) ?? tcpPort;
+    if (activity.hostId != _nodeId) {
+      _rememberPeer(
+        id: activity.hostId,
+        name: activity.hostName,
+        host: remoteHost,
+        port: senderPort,
+        notify: false,
+      );
+    }
+
+    if (!_rememberActivity(activity)) {
+      return;
+    }
+
+    _status =
+        '收到 ${activity.hostName} 的${activity.localizedTypeLabel}活動：${activity.title}';
+    notifyListeners();
+
+    final hops = _intValue(packet['hops']) ?? 0;
+    if (fromOnline || hops >= 8) {
+      return;
+    }
+
+    final forwarded = Map<String, Object?>.from(packet);
+    forwarded['hops'] = hops + 1;
+    unawaited(_sendPacketToPeers(forwarded, exceptHost: remoteHost));
+  }
+
+  void _handleHelpPacket(
+    Map<String, dynamic> packet,
+    String remoteHost, {
+    bool fromOnline = false,
+  }) {
+    final request = MeshHelpRequest.fromMap(Map<String, Object?>.from(packet));
+    if (request == null || _blockedUserIds.contains(request.requesterId)) {
+      return;
+    }
+
+    final senderPort = _intValue(packet['tcpPort']) ?? tcpPort;
+    if (request.requesterId != _nodeId) {
+      _rememberPeer(
+        id: request.requesterId,
+        name: request.requesterName,
+        host: remoteHost,
+        port: senderPort,
+        sosActive: request.isSosActive,
+        notify: false,
+      );
+    }
+
+    final changed = _rememberHelpRequest(request);
+    if (!changed) {
+      return;
+    }
+
+    _status = request.isResolved
+        ? '${request.requesterName} 的求助已解決：${request.title}'
+        : '收到 ${request.requesterName} 的求助：${request.title}';
+    notifyListeners();
+
+    final hops = _intValue(packet['hops']) ?? 0;
+    if (fromOnline || hops >= 8) {
+      return;
+    }
+
+    final forwarded = Map<String, Object?>.from(packet);
+    forwarded['hops'] = hops + 1;
+    unawaited(_sendPacketToPeers(forwarded, exceptHost: remoteHost));
+  }
+
   void _handleSupplyPacket(
     Map<String, dynamic> packet,
     String remoteHost, {
@@ -14041,6 +15798,8 @@ class MeshChatService extends ChangeNotifier {
 
     _status = supply.isTaken
         ? '${supply.offeredByName} 的物資已取完：${supply.title}'
+        : supply.isExchange
+        ? '收到 ${supply.offeredByName} 的交換物資：${supply.title}'
         : '收到 ${supply.offeredByName} 分享的物資：${supply.title}';
     notifyListeners();
 
@@ -14162,6 +15921,18 @@ class MeshChatService extends ChangeNotifier {
       'sentAt': DateTime.now().toUtc().toIso8601String(),
       'site': 'AIECO.HK',
       'rooms': rooms.map((room) => room.toMap()).toList(),
+      'activities': radarActivities
+          .where(_activityPassesModeration)
+          .map((activity) => activity.toMap())
+          .toList(),
+      'helpRequests': _helpRequests.values
+          .where(
+            (request) =>
+                !_blockedUserIds.contains(request.requesterId) &&
+                _helpRequestPassesModeration(request),
+          )
+          .map((request) => request.toMap())
+          .toList(),
       'supplies': _supplies.values
           .where(
             (supply) =>
@@ -14411,6 +16182,14 @@ class MeshChatService extends ChangeNotifier {
       await _sendJson(host, port, supply.toPacket(hops: 1));
     }
 
+    for (final activity in radarActivities) {
+      await _sendJson(host, port, activity.toPacket(hops: 1));
+    }
+
+    for (final request in _helpRequests.values) {
+      await _sendJson(host, port, request.toPacket(hops: 1));
+    }
+
     for (final vote in _creditVotes.values) {
       await _sendJson(host, port, vote.toPacket(hops: 1));
     }
@@ -14445,6 +16224,14 @@ class MeshChatService extends ChangeNotifier {
 
     for (final supply in _supplies.values) {
       await _sendPacketToOnline(supply.toPacket(hops: 1));
+    }
+
+    for (final activity in radarActivities) {
+      await _sendPacketToOnline(activity.toPacket(hops: 1));
+    }
+
+    for (final request in _helpRequests.values) {
+      await _sendPacketToOnline(request.toPacket(hops: 1));
     }
 
     for (final vote in _creditVotes.values) {
@@ -14642,6 +16429,103 @@ class MeshChatService extends ChangeNotifier {
     return false;
   }
 
+  bool _rememberActivity(MeshRadarActivity activity) {
+    if (_adminDeletedActivityIds.contains(activity.id) ||
+        _supersededActivityIds.contains(activity.id) ||
+        activity.id.isEmpty ||
+        activity.title.trim().isEmpty) {
+      return false;
+    }
+    if (_blockedUserIds.contains(activity.hostId) ||
+        !_activityPassesModeration(activity)) {
+      return false;
+    }
+
+    final previousHostActivities = _activities.values
+        .where(
+          (known) => known.hostId == activity.hostId && known.id != activity.id,
+        )
+        .toList();
+    for (final known in previousHostActivities) {
+      final knownIsNewer =
+          known.createdAt.isAfter(activity.createdAt) ||
+          (known.createdAt.isAtSameMomentAs(activity.createdAt) &&
+              known.id.compareTo(activity.id) > 0);
+      if (knownIsNewer) {
+        _supersededActivityIds.add(activity.id);
+        return false;
+      }
+    }
+
+    for (final previous in previousHostActivities) {
+      _activities.remove(previous.id);
+      _supersededActivityIds.add(previous.id);
+    }
+
+    final existing = _activities[activity.id];
+    if (existing == null || activity.createdAt.isAfter(existing.createdAt)) {
+      _activities[activity.id] = activity;
+      return true;
+    }
+    return false;
+  }
+
+  void _rememberActivitiesFromList(Object? value) {
+    if (value is! List) {
+      return;
+    }
+
+    var changed = false;
+    final now = DateTime.now();
+    for (final item in value.whereType<Map>()) {
+      final activity = MeshRadarActivity.fromMap(
+        Map<String, Object?>.from(item),
+      );
+      if (activity == null || activity.isExpired(now)) {
+        continue;
+      }
+      changed = _rememberActivity(activity) || changed;
+    }
+    if (changed) {
+      notifyListeners();
+    }
+  }
+
+  bool _rememberHelpRequest(MeshHelpRequest request) {
+    if (request.id.isEmpty || request.title.trim().isEmpty) {
+      return false;
+    }
+    if (_blockedUserIds.contains(request.requesterId) ||
+        !_helpRequestPassesModeration(request)) {
+      return false;
+    }
+
+    final existing = _helpRequests[request.id];
+    if (existing == null || request.updatedAt.isAfter(existing.updatedAt)) {
+      _helpRequests[request.id] = request;
+      return true;
+    }
+    return false;
+  }
+
+  void _rememberHelpRequestsFromList(Object? value) {
+    if (value is! List) {
+      return;
+    }
+
+    var changed = false;
+    for (final item in value.whereType<Map>()) {
+      final request = MeshHelpRequest.fromMap(Map<String, Object?>.from(item));
+      if (request == null) {
+        continue;
+      }
+      changed = _rememberHelpRequest(request) || changed;
+    }
+    if (changed) {
+      notifyListeners();
+    }
+  }
+
   void _rememberSuppliesFromList(Object? value) {
     if (value is! List) {
       return;
@@ -14676,7 +16560,24 @@ class MeshChatService extends ChangeNotifier {
 
   bool _supplyPassesModeration(MeshSupply supply) {
     return MeshContentModeration.check(
-      [supply.title, supply.quantity, supply.note].join(' '),
+      [
+        supply.title,
+        supply.quantity,
+        supply.note,
+        supply.exchangeFor,
+      ].join(' '),
+    ).allowed;
+  }
+
+  bool _helpRequestPassesModeration(MeshHelpRequest request) {
+    return MeshContentModeration.check(
+      [request.title, request.details].join(' '),
+    ).allowed;
+  }
+
+  bool _activityPassesModeration(MeshRadarActivity activity) {
+    return MeshContentModeration.check(
+      [activity.title, activity.details].join(' '),
     ).allowed;
   }
 
@@ -14770,6 +16671,11 @@ class MeshChatService extends ChangeNotifier {
       removed = removed || shouldRemove;
       return shouldRemove;
     });
+    _activities.removeWhere((_, activity) {
+      final shouldRemove = activity.isExpired(now);
+      removed = removed || shouldRemove;
+      return shouldRemove;
+    });
     if (removed) {
       notifyListeners();
     }
@@ -14788,6 +16694,9 @@ class MeshChatService extends ChangeNotifier {
     );
     _supplies.removeWhere(
       (_, supply) => _blockedUserIds.contains(supply.offeredById),
+    );
+    _activities.removeWhere(
+      (_, activity) => _blockedUserIds.contains(activity.hostId),
     );
     _creditVotes.removeWhere(
       (_, vote) =>
@@ -15176,6 +17085,266 @@ class MeshBlockedUser {
   final String name;
 }
 
+class MeshRadarActivity {
+  const MeshRadarActivity({
+    required this.id,
+    required this.title,
+    required this.details,
+    required this.type,
+    required this.hostId,
+    required this.hostName,
+    required this.location,
+    required this.createdAt,
+    required this.expiresAt,
+  });
+
+  static const String mutualAidType = 'mutualAid';
+  static const String sharingType = 'sharing';
+  static const String medicalType = 'medical';
+  static const String spiritualType = 'spiritual';
+  static const List<String> supportedTypes = <String>[
+    mutualAidType,
+    sharingType,
+    medicalType,
+    spiritualType,
+  ];
+  static const Duration defaultLifetime = Duration(hours: 24);
+
+  static String normalizeType(String value) {
+    return supportedTypes.contains(value) ? value : mutualAidType;
+  }
+
+  static MeshRadarActivity? fromMap(Map<String, Object?> map) {
+    final id = MeshChatService._stringValue(map['activityId']);
+    final title = MeshChatService._stringValue(map['title']);
+    final hostId =
+        MeshChatService._stringValue(map['hostId']) ??
+        MeshChatService._stringValue(map['senderId']);
+    final hostName =
+        MeshChatService._stringValue(map['hostName']) ??
+        MeshChatService._stringValue(map['senderName']);
+    final locationValue = map['location'];
+    if (id == null ||
+        id.isEmpty ||
+        title == null ||
+        title.trim().isEmpty ||
+        hostId == null ||
+        hostName == null ||
+        locationValue is! Map) {
+      return null;
+    }
+
+    final location = DeviceLocation.fromMap(
+      Map<String, Object?>.from(locationValue),
+    );
+    if (location.latitude == 0 || location.longitude == 0) {
+      return null;
+    }
+    final createdAt =
+        DateTime.tryParse(
+          MeshChatService._stringValue(map['createdAt']) ?? '',
+        ) ??
+        DateTime.now();
+    final maximumExpiresAt = createdAt.add(defaultLifetime);
+    final requestedExpiresAt = DateTime.tryParse(
+      MeshChatService._stringValue(map['expiresAt']) ?? '',
+    );
+    final expiresAt =
+        requestedExpiresAt != null &&
+            requestedExpiresAt.isBefore(maximumExpiresAt)
+        ? requestedExpiresAt
+        : maximumExpiresAt;
+    return MeshRadarActivity(
+      id: id,
+      title: title,
+      details: MeshChatService._stringValue(map['details']) ?? '',
+      type: normalizeType(
+        MeshChatService._stringValue(map['type']) ?? mutualAidType,
+      ),
+      hostId: hostId,
+      hostName: hostName,
+      location: location,
+      createdAt: createdAt,
+      expiresAt: expiresAt,
+    );
+  }
+
+  final String id;
+  final String title;
+  final String details;
+  final String type;
+  final String hostId;
+  final String hostName;
+  final DeviceLocation location;
+  final DateTime createdAt;
+  final DateTime expiresAt;
+
+  String get localizedTypeLabel => switch (type) {
+    sharingType => '分享',
+    medicalType => '醫療',
+    spiritualType => '心靈',
+    _ => '互助',
+  };
+
+  bool isExpired(DateTime now) => !expiresAt.isAfter(now);
+
+  Map<String, Object?> toMap() {
+    return <String, Object?>{
+      'activityId': id,
+      'title': title,
+      'details': details,
+      'type': type,
+      'hostId': hostId,
+      'hostName': hostName,
+      'location': location.toMap(),
+      'createdAt': createdAt.toUtc().toIso8601String(),
+      'expiresAt': expiresAt.toUtc().toIso8601String(),
+    };
+  }
+
+  Map<String, Object?> toPacket({int hops = 0}) {
+    return <String, Object?>{
+      'kind': MeshChatService._activityKind,
+      'app': MeshChatService._appName,
+      'senderId': hostId,
+      'senderName': hostName,
+      'tcpPort': MeshChatService.tcpPort,
+      'hops': hops,
+      ...toMap(),
+    };
+  }
+}
+
+class MeshHelpRequest {
+  const MeshHelpRequest({
+    required this.id,
+    required this.title,
+    required this.details,
+    required this.requesterId,
+    required this.requesterName,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.status,
+    required this.isSosActive,
+  });
+
+  static const String activeStatus = 'active';
+  static const String resolvedStatus = 'resolved';
+
+  static MeshHelpRequest? fromMap(Map<String, Object?> map) {
+    final id = MeshChatService._stringValue(map['helpId']);
+    final title = MeshChatService._stringValue(map['title']);
+    final requesterId =
+        MeshChatService._stringValue(map['requesterId']) ??
+        MeshChatService._stringValue(map['senderId']);
+    final requesterName =
+        MeshChatService._stringValue(map['requesterName']) ??
+        MeshChatService._stringValue(map['senderName']);
+    if (id == null ||
+        id.isEmpty ||
+        title == null ||
+        title.trim().isEmpty ||
+        requesterId == null ||
+        requesterName == null) {
+      return null;
+    }
+
+    final createdAt =
+        DateTime.tryParse(
+          MeshChatService._stringValue(map['createdAt']) ?? '',
+        ) ??
+        DateTime.now();
+    final updatedAt =
+        DateTime.tryParse(
+          MeshChatService._stringValue(map['updatedAt']) ?? '',
+        ) ??
+        createdAt;
+    return MeshHelpRequest(
+      id: id,
+      title: title,
+      details: MeshChatService._stringValue(map['details']) ?? '',
+      requesterId: requesterId,
+      requesterName: requesterName,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      status:
+          MeshChatService._stringValue(map['status']) ??
+          (map['isResolved'] == true ? resolvedStatus : activeStatus),
+      isSosActive: map['isSosActive'] == true,
+    );
+  }
+
+  final String id;
+  final String title;
+  final String details;
+  final String requesterId;
+  final String requesterName;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String status;
+  final bool isSosActive;
+
+  bool get isResolved => status == resolvedStatus;
+
+  MeshHelpRequest withSosActive(bool value, {bool touchUpdatedAt = false}) {
+    if (value == isSosActive && !touchUpdatedAt) {
+      return this;
+    }
+    return MeshHelpRequest(
+      id: id,
+      title: title,
+      details: details,
+      requesterId: requesterId,
+      requesterName: requesterName,
+      createdAt: createdAt,
+      updatedAt: touchUpdatedAt ? DateTime.now() : updatedAt,
+      status: status,
+      isSosActive: value,
+    );
+  }
+
+  MeshHelpRequest markResolved({required bool isSosActive}) {
+    return MeshHelpRequest(
+      id: id,
+      title: title,
+      details: details,
+      requesterId: requesterId,
+      requesterName: requesterName,
+      createdAt: createdAt,
+      updatedAt: DateTime.now(),
+      status: resolvedStatus,
+      isSosActive: isSosActive,
+    );
+  }
+
+  Map<String, Object?> toMap() {
+    return <String, Object?>{
+      'helpId': id,
+      'title': title,
+      'details': details,
+      'requesterId': requesterId,
+      'requesterName': requesterName,
+      'createdAt': createdAt.toUtc().toIso8601String(),
+      'updatedAt': updatedAt.toUtc().toIso8601String(),
+      'status': status,
+      'isResolved': isResolved,
+      'isSosActive': isSosActive,
+    };
+  }
+
+  Map<String, Object?> toPacket({int hops = 0}) {
+    return <String, Object?>{
+      'kind': MeshChatService._helpKind,
+      'app': MeshChatService._appName,
+      'senderId': requesterId,
+      'senderName': requesterName,
+      'tcpPort': MeshChatService.tcpPort,
+      'hops': hops,
+      ...toMap(),
+    };
+  }
+}
+
 class MeshSupply {
   const MeshSupply({
     required this.id,
@@ -15187,10 +17356,14 @@ class MeshSupply {
     required this.createdAt,
     required this.updatedAt,
     required this.status,
+    this.type = shareType,
+    this.exchangeFor = '',
   });
 
   static const String availableStatus = 'available';
   static const String takenStatus = 'taken';
+  static const String shareType = 'share';
+  static const String exchangeType = 'exchange';
 
   static MeshSupply? fromMap(Map<String, Object?> map) {
     final id = MeshChatService._stringValue(map['supplyId']);
@@ -15232,6 +17405,10 @@ class MeshSupply {
       status:
           MeshChatService._stringValue(map['status']) ??
           (map['isTaken'] == true ? takenStatus : availableStatus),
+      type: MeshChatService._stringValue(map['type']) == exchangeType
+          ? exchangeType
+          : shareType,
+      exchangeFor: MeshChatService._stringValue(map['exchangeFor']) ?? '',
     );
   }
 
@@ -15244,8 +17421,11 @@ class MeshSupply {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String status;
+  final String type;
+  final String exchangeFor;
 
   bool get isTaken => status == takenStatus;
+  bool get isExchange => type == exchangeType;
 
   MeshSupply markTaken() {
     return MeshSupply(
@@ -15258,6 +17438,8 @@ class MeshSupply {
       createdAt: createdAt,
       updatedAt: DateTime.now(),
       status: takenStatus,
+      type: type,
+      exchangeFor: exchangeFor,
     );
   }
 
@@ -15273,6 +17455,8 @@ class MeshSupply {
       'updatedAt': updatedAt.toUtc().toIso8601String(),
       'status': status,
       'isTaken': isTaken,
+      'type': type,
+      'exchangeFor': exchangeFor,
     };
   }
 

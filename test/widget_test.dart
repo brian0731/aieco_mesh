@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aieco_mesh/main.dart';
@@ -282,8 +283,10 @@ void main() {
   });
 
   test('admin actions delete content and toggle user mute', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     final mesh = MeshChatService();
     addTearDown(mesh.dispose);
+    await mesh.setNetworkMode(MeshNetworkMode.online);
 
     expect(MeshChatService.adminPasswordForNow(), endsWith('1314'));
     expect(MeshChatService.adminPasswordForNow(), hasLength(12));
@@ -295,17 +298,38 @@ void main() {
       isTrue,
     );
     final supplyId = mesh.supplies.single.id;
+    mesh.updateLocation(
+      DeviceLocation(
+        latitude: 22.3412,
+        longitude: 114.1932,
+        accuracyMeters: 8,
+        provider: 'test',
+        timestamp: DateTime.now(),
+        fromCache: false,
+      ),
+    );
+    expect(
+      await mesh.createRadarActivity(
+        title: 'Admin 測試活動',
+        details: '測試集合點',
+        type: MeshRadarActivity.mutualAidType,
+      ),
+      isTrue,
+    );
+    final activityId = mesh.radarActivities.single.id;
     await mesh.sendMessage('Admin 測試留言');
     final messageId = mesh.messages.single.id;
 
     mesh.adminDeleteMessage(messageId);
     mesh.adminDeleteRoom(roomId);
     mesh.adminDeleteSupply(supplyId);
+    mesh.adminDeleteActivity(activityId);
     mesh.adminSetUserMuted('peer-admin-test', muted: true);
 
     expect(mesh.messages, isEmpty);
     expect(mesh.rooms.any((room) => room.id == roomId), isFalse);
     expect(mesh.supplies, isEmpty);
+    expect(mesh.radarActivities, isEmpty);
     expect(mesh.isUserMuted('peer-admin-test'), isTrue);
 
     mesh.adminSetUserMuted('peer-admin-test', muted: false);
@@ -462,6 +486,10 @@ void main() {
       find.byKey(const ValueKey('admin-supplies-section')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('admin-activities-section')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('admin-users-section')), findsOneWidget);
   });
 
@@ -491,6 +519,122 @@ void main() {
     expect(mesh.status, contains('求救光點'));
     await mesh.stop();
   });
+
+  test('MeshChatService manages SOS-prioritized help requests', () async {
+    final mesh = MeshChatService();
+    addTearDown(mesh.dispose);
+    await mesh.setNetworkMode(MeshNetworkMode.online);
+
+    expect(mesh.createHelpRequest(title: '需要急救用品', details: '黃大仙站外'), isTrue);
+    expect(mesh.helpRequests, hasLength(1));
+    expect(mesh.helpRequests.single.isSosActive, isFalse);
+
+    mesh.setSosActive(true);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(mesh.helpRequests.single.isSosActive, isTrue);
+    expect(mesh.helpRequests.single.title, '需要急救用品');
+
+    mesh.markHelpRequestResolved(mesh.helpRequests.single.id);
+    expect(mesh.helpRequests, isEmpty);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    await mesh.stop();
+  });
+
+  test('MeshChatService stores exchange supply details', () async {
+    final mesh = MeshChatService();
+    addTearDown(mesh.dispose);
+    await mesh.setNetworkMode(MeshNetworkMode.online);
+
+    expect(
+      mesh.shareSupply(
+        title: '電池',
+        quantity: 'AA 10粒',
+        note: '中環交收',
+        type: MeshSupply.exchangeType,
+        exchangeFor: '飲用水',
+      ),
+      isTrue,
+    );
+
+    final supply = mesh.supplies.single;
+    expect(supply.isExchange, isTrue);
+    expect(supply.exchangeFor, '飲用水');
+    expect(MeshSupply.fromMap(supply.toMap())?.isExchange, isTrue);
+    await mesh.stop();
+  });
+
+  test(
+    'MeshChatService limits radar activity creates and keeps only the latest',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final mesh = MeshChatService();
+      addTearDown(mesh.dispose);
+      await mesh.setNetworkMode(MeshNetworkMode.online);
+      mesh.updateLocation(
+        DeviceLocation(
+          latitude: 22.3412,
+          longitude: 114.1932,
+          accuracyMeters: 8,
+          provider: 'test',
+          timestamp: DateTime.now(),
+          fromCache: false,
+        ),
+      );
+
+      expect(await mesh.activityCreatesRemainingToday(), 3);
+      for (final entry in <(String, String)>[
+        (MeshRadarActivity.mutualAidType, '鄰里互助'),
+        (MeshRadarActivity.sharingType, '物資分享'),
+        (MeshRadarActivity.medicalType, '健康支援'),
+      ]) {
+        expect(
+          await mesh.createRadarActivity(
+            title: entry.$2,
+            details: '黃大仙集合',
+            type: entry.$1,
+          ),
+          isTrue,
+        );
+      }
+
+      expect(mesh.radarActivities, hasLength(1));
+      expect(mesh.radarActivities.single.title, '健康支援');
+      final localHostId = mesh.onlineUsers.single.id;
+      expect(mesh.radarActivitiesForHost(localHostId), hasLength(1));
+      expect(mesh.radarActivitiesForHost('unknown-host'), isEmpty);
+      expect(await mesh.activityCreatesRemainingToday(), 0);
+      expect(
+        await mesh.createRadarActivity(
+          title: '第四個活動',
+          details: '',
+          type: MeshRadarActivity.spiritualType,
+        ),
+        isFalse,
+      );
+      expect(mesh.status, contains('今天已建立 3 次活動'));
+
+      final encoded = mesh.radarActivities.first.toMap();
+      final decoded = MeshRadarActivity.fromMap(encoded);
+      expect(decoded?.title, mesh.radarActivities.first.title);
+      expect(decoded?.location.latitude, 22.3412);
+
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('mesh.activityDailyCount'), 3);
+      await mesh.stop();
+
+      final restartedMesh = MeshChatService();
+      addTearDown(restartedMesh.dispose);
+      expect(await restartedMesh.activityCreatesRemainingToday(), 0);
+      expect(MeshRadarActivity.supportedTypes, <String>[
+        MeshRadarActivity.mutualAidType,
+        MeshRadarActivity.sharingType,
+        MeshRadarActivity.medicalType,
+        MeshRadarActivity.spiritualType,
+      ]);
+    },
+  );
 
   testWidgets('language menu switches the main UI and saves the choice', (
     WidgetTester tester,
@@ -691,7 +835,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('傳播頻道'), findsWidgets);
-    expect(find.text('在線用家'), findsOneWidget);
+    expect(find.text('在線'), findsOneWidget);
+    expect(find.text('求助'), findsOneWidget);
     expect(find.text('光團'), findsOneWidget);
     expect(find.text('物資'), findsOneWidget);
     expect(find.text('1 人在線'), findsOneWidget);
@@ -776,16 +921,58 @@ void main() {
       findsOneWidget,
     );
 
+    await tester.tap(find.text('求助'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('尋找求助'), findsOneWidget);
+    expect(find.text('新增求助'), findsOneWidget);
+
+    await tester.tap(find.text('新增求助'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('需要甚麼協助'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('help-title-input')),
+      '需要輪椅協助',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('help-details-input')),
+      '黃大仙站 A 出口',
+    );
+    await tester.tap(find.text('發布求助'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('help-list-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('求助列表'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('help-search-input')),
+      '輪椅',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('需要輪椅協助'), findsOneWidget);
+    expect(find.textContaining('黃大仙站 A 出口'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('關閉'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('物資'));
     await tester.pumpAndSettle();
 
     expect(find.text('找物資'), findsOneWidget);
-    expect(find.text('分享物資'), findsOneWidget);
+    expect(find.text('分享 / 交換'), findsOneWidget);
 
-    await tester.tap(find.text('分享物資'));
+    await tester.tap(find.text('分享 / 交換'));
     await tester.pumpAndSettle();
 
     expect(find.text('物資名稱'), findsOneWidget);
+    expect(find.text('免費分享'), findsOneWidget);
+    expect(find.text('交換物資'), findsOneWidget);
+
+    await tester.tap(find.text('交換物資'));
+    await tester.pumpAndSettle();
+    expect(find.text('希望交換物資'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const ValueKey('supply-title-input')),
@@ -799,8 +986,12 @@ void main() {
       find.byKey(const ValueKey('supply-note-input')),
       '中環交收',
     );
+    await tester.enterText(
+      find.byKey(const ValueKey('supply-exchange-for-input')),
+      '飲用水',
+    );
     await tester.pump();
-    await tester.tap(find.text('分享'));
+    await tester.tap(find.text('發布交換'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('supply-list-button')));
@@ -817,6 +1008,7 @@ void main() {
 
     expect(find.text('電池'), findsOneWidget);
     expect(find.textContaining('中環交收'), findsOneWidget);
+    expect(find.textContaining('希望交換：飲用水'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Tag 發起人回覆'));
     await tester.pumpAndSettle();
@@ -848,6 +1040,16 @@ void main() {
     expect(find.text('最近10個光點'), findsOneWidget);
     expect(find.text('請先定位'), findsOneWidget);
     expect(find.text('定位'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('create-radar-activity-button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('create-radar-activity-button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('正在定位，定位完成後請再開活動。'), findsOneWidget);
 
     await tester.tap(find.text('社區資訊'));
     await tester.pumpAndSettle();
@@ -860,7 +1062,7 @@ void main() {
     expect(find.text('https://www.aieco.hk'), findsNothing);
   });
 
-  testWidgets('network page exposes three user support links', (
+  testWidgets('network page exposes four user support links', (
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -883,9 +1085,17 @@ void main() {
     );
     expect(find.byKey(const ValueKey('line-support-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('whatsapp-group-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('qq-channel-button')), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is FaIcon && widget.icon == FontAwesomeIcons.qq.data,
+      ),
+      findsOneWidget,
+    );
     expect(find.byTooltip('WhatsApp 查詢'), findsOneWidget);
     expect(find.byTooltip('LINE 聯絡'), findsOneWidget);
     expect(find.byTooltip('WhatsApp 群組'), findsOneWidget);
+    expect(find.byTooltip('QQ 頻道'), findsOneWidget);
 
     expect(
       whatsAppSupportUrl,
@@ -896,5 +1106,75 @@ void main() {
       whatsAppGroupUrl,
       'https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm?s=cl&p=a&ilr=0',
     );
+    expect(qqChannelUrl, 'https://pd.qq.com/s/fasn44zz5?b=5');
+  });
+
+  testWidgets('chat and radar tools fit a narrow phone layout', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'mesh.eulaAcceptedAt': DateTime.utc(2026).toIso8601String(),
+    });
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const PropagationLightApp(autoStart: false, enableWebView: false),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('光之通道'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('求助'), findsOneWidget);
+    await tester.tap(find.text('求助'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('create-help-button')), findsOneWidget);
+
+    final toolTabs =
+        tester.widget(find.byKey(const ValueKey('chat-tools-tabs')))
+            as SegmentedButton;
+    expect(toolTabs.style?.textStyle?.resolve(<WidgetState>{})?.fontSize, 11);
+
+    await tester.tap(find.text('光之雷達').first);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('create-radar-activity-button')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('English chat tool tabs fit a narrow phone layout', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'app.language': 'en',
+      'mesh.eulaAcceptedAt': DateTime.utc(2026).toIso8601String(),
+    });
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const PropagationLightApp(autoStart: false, enableWebView: false),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Channel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Online'), findsOneWidget);
+    expect(find.text('Help'), findsOneWidget);
+    expect(find.text('Groups'), findsOneWidget);
+    expect(find.text('Supplies'), findsOneWidget);
+    expect(find.text('Find'), findsOneWidget);
+    final toolTabs =
+        tester.widget(find.byKey(const ValueKey('chat-tools-tabs')))
+            as SegmentedButton;
+    expect(toolTabs.style?.textStyle?.resolve(<WidgetState>{})?.fontSize, 9);
+    expect(tester.takeException(), isNull);
   });
 }
