@@ -15,7 +15,9 @@ https://play.google.com/store/apps/details?id=aieco.light.mesh
 
 ## 光網支援:
 - Whatsapp https://wa.me/+85262112160
+- Group https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm
 - LINE https://line.me/ti/p/7elEusTH6q
+- QQ頻道 https://pd.qq.com/s/fasn44zz5?b=5
 
 ## 光網連接教學:
 https://www.youtube.com/watch?v=q94Pgn1gSVc
