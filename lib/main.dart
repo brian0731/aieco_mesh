@@ -5793,7 +5793,10 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final location = widget.radar.location;
+    // MeshChatService is the source of truth after a successful locate. Using
+    // only the controller's transient value can hide this device while the
+    // mesh already has (and is sharing) its location.
+    final location = widget.mesh.myLocation ?? widget.radar.location;
     final contacts = widget.mesh.radarContacts;
     final activities = widget.mesh.radarActivities;
     final contactIds = contacts.map((contact) => contact.id).toSet();
@@ -5876,62 +5879,66 @@ class _LightRadarPanelState extends State<_LightRadarPanel> {
                         ],
                       ),
                     ),
+                    LocalizedTooltip(
+                      message: '更改用戶名稱',
+                      child: IconButton(
+                        key: const ValueKey('radar-edit-user-name-button'),
+                        onPressed: widget.onEditUserName,
+                        icon: const Icon(Icons.edit_outlined),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    ActionChip(
-                      key: const ValueKey('radar-user-name-chip'),
-                      avatar: const Icon(Icons.person_pin_circle, size: 16),
-                      label: LocalizedText(widget.mesh.identityName),
-                      side: const BorderSide(color: Color(0xFFD7DED7)),
-                      backgroundColor: const Color(0xFFE0F2E9),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: _localizedUiText('更改用戶名稱'),
-                      onPressed: widget.onEditUserName,
-                    ),
-                    SegmentedButton<_RadarMapMode>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment<_RadarMapMode>(
-                          value: _RadarMapMode.online,
-                          icon: Icon(Icons.public, size: 16),
-                          label: LocalizedText('線上'),
-                        ),
-                        ButtonSegment<_RadarMapMode>(
-                          value: _RadarMapMode.offline,
-                          icon: Icon(Icons.map_outlined, size: 16),
-                          label: LocalizedText('離線'),
-                        ),
-                      ],
-                      selected: {_mapMode},
-                      onSelectionChanged: (selection) {
-                        final mode = selection.single;
-                        setState(() => _mapMode = mode);
-                      },
-                    ),
-                    FilledButton.icon(
-                      onPressed: widget.radar.busy ? null : _locate,
-                      icon: widget.radar.busy
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.my_location),
-                      label: const LocalizedText('定位'),
-                    ),
-                    OutlinedButton.icon(
-                      key: const ValueKey('create-radar-activity-button'),
-                      onPressed: () => unawaited(_createActivity()),
-                      icon: const Icon(Icons.add_location_alt_outlined),
-                      label: const LocalizedText('開活動'),
-                    ),
-                  ],
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SegmentedButton<_RadarMapMode>(
+                        showSelectedIcon: false,
+                        segments: const [
+                          ButtonSegment<_RadarMapMode>(
+                            value: _RadarMapMode.online,
+                            icon: Icon(Icons.public, size: 16),
+                            label: LocalizedText('線上'),
+                          ),
+                          ButtonSegment<_RadarMapMode>(
+                            value: _RadarMapMode.offline,
+                            icon: Icon(Icons.map_outlined, size: 16),
+                            label: LocalizedText('離線'),
+                          ),
+                        ],
+                        selected: {_mapMode},
+                        onSelectionChanged: (selection) {
+                          final mode = selection.single;
+                          setState(() => _mapMode = mode);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        key: const ValueKey('radar-locate-button'),
+                        onPressed: widget.radar.busy ? null : _locate,
+                        icon: widget.radar.busy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.my_location),
+                        label: const LocalizedText('定位'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        key: const ValueKey('create-radar-activity-button'),
+                        onPressed: () => unawaited(_createActivity()),
+                        icon: const Icon(Icons.add_location_alt_outlined),
+                        label: const LocalizedText('開活動'),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

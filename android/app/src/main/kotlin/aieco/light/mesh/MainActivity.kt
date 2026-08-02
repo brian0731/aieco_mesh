@@ -160,6 +160,9 @@ private class WifiMeshBridge(private val activity: Activity) {
     private var pendingLocationResult: MethodChannel.Result? = null
     private var pendingLocationLowPower = false
     private var pendingLocationMaxCacheAgeMillis = 120_000L
+    private var activeLocationResult: MethodChannel.Result? = null
+    private var activeLocationListener: LocationListener? = null
+    private var activeLocationTimeout: Runnable? = null
     private var torchCameraId: String? = null
 
     private val receiver =
@@ -250,14 +253,16 @@ private class WifiMeshBridge(private val activity: Activity) {
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
         runCatching { connectivityManager.registerNetworkCallback(request, networkCallback) }
-        val bluetoothRequest = NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_BLUETOOTH)
-            .build()
-        runCatching {
-            connectivityManager.registerNetworkCallback(
-                bluetoothRequest,
-                bluetoothNetworkCallback
-            )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching {
+                val bluetoothRequest = NetworkRequest.Builder()
+                    .addTransportType(NetworkCapabilities.TRANSPORT_BLUETOOTH)
+                    .build()
+                connectivityManager.registerNetworkCallback(
+                    bluetoothRequest,
+                    bluetoothNetworkCallback
+                )
+            }
         }
     }
 
@@ -267,10 +272,18 @@ private class WifiMeshBridge(private val activity: Activity) {
             receiverRegistered = false
         }
         runCatching { applyTorch(false) }
-        pendingLocationResult?.error("activity_destroyed", "定位中斷。", null)
+        val permissionResult = pendingLocationResult
         pendingLocationResult = null
+        if (permissionResult != null) {
+            runCatching {
+                permissionResult.error("activity_destroyed", "定位中斷。", null)
+            }
+        }
+        cancelActiveLocationRequest("activity_destroyed", "定位中斷。")
         runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
-        runCatching { connectivityManager.unregisterNetworkCallback(bluetoothNetworkCallback) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching { connectivityManager.unregisterNetworkCallback(bluetoothNetworkCallback) }
+        }
         wifiDirectNetwork = null
         localNetwork = null
         bluetoothNetwork = null
@@ -402,7 +415,13 @@ private class WifiMeshBridge(private val activity: Activity) {
             val capabilities = runCatching {
                 connectivityManager.getNetworkCapabilities(network)
             }.getOrNull() ?: continue
-            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH)) {
+            val interfaceName = runCatching {
+                connectivityManager.getLinkProperties(network)?.interfaceName
+            }.getOrNull()
+            if (isBluetoothInterface(interfaceName) ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH))
+            ) {
                 if (nextBluetoothNetwork == null) {
                     nextBluetoothNetwork = network
                 }
@@ -412,9 +431,6 @@ private class WifiMeshBridge(private val activity: Activity) {
                 continue
             }
 
-            val interfaceName = runCatching {
-                connectivityManager.getLinkProperties(network)?.interfaceName
-            }.getOrNull()
             if (isWifiDirectInterface(interfaceName)) {
                 nextWifiDirectNetwork = network
             } else if (nextLocalNetwork == null) {
@@ -441,6 +457,13 @@ private class WifiMeshBridge(private val activity: Activity) {
         val name = interfaceName ?: return false
         return name.startsWith("p2p", ignoreCase = true) ||
             name.contains("-p2p", ignoreCase = true)
+    }
+
+    private fun isBluetoothInterface(interfaceName: String?): Boolean {
+        val name = interfaceName ?: return false
+        return name.startsWith("bnep", ignoreCase = true) ||
+            name.startsWith("bt-pan", ignoreCase = true) ||
+            name.contains("bluetooth", ignoreCase = true)
     }
 
     fun handle(call: MethodCall, result: MethodChannel.Result) {
@@ -1020,6 +1043,11 @@ private class WifiMeshBridge(private val activity: Activity) {
             return
         }
 
+        if (activeLocationResult != null) {
+            result.error("location_pending", "正在讀取手機定位。", null)
+            return
+        }
+
         val cached = bestLastKnownLocation()
         val now = System.currentTimeMillis()
         if (cached != null &&
@@ -1050,32 +1078,42 @@ private class WifiMeshBridge(private val activity: Activity) {
         }
 
         var finished = false
-        var listener: LocationListener? = null
 
         fun clearListener() {
-            listener?.let { runCatching { locationManager.removeUpdates(it) } }
-            listener = null
+            if (activeLocationResult !== result) {
+                return
+            }
+            activeLocationListener?.let {
+                runCatching { locationManager.removeUpdates(it) }
+            }
+            activeLocationListener = null
+            activeLocationTimeout?.let(mainHandler::removeCallbacks)
+            activeLocationTimeout = null
+            activeLocationResult = null
         }
 
         fun finishWithLocation(location: Location, fromCache: Boolean, message: String) {
-            if (finished) {
+            if (finished || activeLocationResult !== result) {
                 return
             }
             finished = true
             clearListener()
-            result.success(location.toLocationMap(fromCache = fromCache, message = message))
+            runCatching {
+                result.success(location.toLocationMap(fromCache = fromCache, message = message))
+            }
         }
 
         fun finishWithError(code: String, message: String) {
-            if (finished) {
+            if (finished || activeLocationResult !== result) {
                 return
             }
             finished = true
             clearListener()
-            result.error(code, message, null)
+            runCatching { result.error(code, message, null) }
         }
 
-        listener =
+        activeLocationResult = result
+        activeLocationListener =
             object : LocationListener {
                 override fun onLocationChanged(location: Location) {
                     finishWithLocation(location, fromCache = false, message = "定位成功")
@@ -1091,7 +1129,7 @@ private class WifiMeshBridge(private val activity: Activity) {
 
         var requested = false
         for (provider in providers) {
-            val activeListener = listener ?: continue
+            val activeListener = activeLocationListener ?: continue
             val ok = runCatching {
                 locationManager.requestLocationUpdates(
                     provider,
@@ -1113,9 +1151,9 @@ private class WifiMeshBridge(private val activity: Activity) {
             return
         }
 
-        mainHandler.postDelayed({
+        val timeout = Runnable {
             if (finished) {
-                return@postDelayed
+                return@Runnable
             }
             val fallback = bestLastKnownLocation() ?: cached
             if (fallback != null) {
@@ -1123,7 +1161,23 @@ private class WifiMeshBridge(private val activity: Activity) {
             } else {
                 finishWithError("location_timeout", "定位逾時，請到室外或開啟更準確定位。")
             }
-        }, if (lowPower) 4500L else 8000L)
+        }
+        activeLocationTimeout = timeout
+        mainHandler.postDelayed(timeout, if (lowPower) 4500L else 8000L)
+    }
+
+    private fun cancelActiveLocationRequest(code: String, message: String) {
+        val result = activeLocationResult
+        activeLocationResult = null
+        activeLocationListener?.let {
+            runCatching { locationManager.removeUpdates(it) }
+        }
+        activeLocationListener = null
+        activeLocationTimeout?.let(mainHandler::removeCallbacks)
+        activeLocationTimeout = null
+        if (result != null) {
+            runCatching { result.error(code, message, null) }
+        }
     }
 
     @SuppressLint("MissingPermission")

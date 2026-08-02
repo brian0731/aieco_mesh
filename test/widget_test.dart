@@ -1143,6 +1143,12 @@ void main() {
       find.byKey(const ValueKey('create-radar-activity-button')),
       findsOneWidget,
     );
+    expect(
+      tester.getCenter(find.byKey(const ValueKey('radar-locate-button'))).dy,
+      tester
+          .getCenter(find.byKey(const ValueKey('create-radar-activity-button')))
+          .dy,
+    );
     expect(tester.takeException(), isNull);
   });
 
