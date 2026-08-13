@@ -158,6 +158,11 @@ wss://YOUR_RELAY_DOMAIN/ws/light
 
 ## 建置
 
+開發環境版本：
+
+- Flutter `3.44.0`（stable channel，最低版本 `3.44.0`）
+- Dart `3.12.0`
+
 ```powershell
 flutter analyze
 flutter test
