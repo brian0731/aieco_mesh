@@ -25,8 +25,6 @@ const String _communityShareUrl = 'https://www.aieco.hk/community/share';
 const String whatsAppSupportUrl =
     'https://wa.me/+85262112160?text=%E6%83%B3%E6%9F%A5%E8%A9%A2%E5%85%89%E7%B6%B2%E6%94%AF%E6%8F%B4';
 const String lineSupportUrl = 'https://line.me/ti/p/7elEusTH6q';
-const String whatsAppGroupUrl =
-    'https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm?s=cl&p=a&ilr=0';
 const String qqChannelUrl = 'https://pd.qq.com/s/fasn44zz5?b=5';
 const String _communityNewsHost = 'www.aieco.hk';
 const String _communityNewsApiPath = '/api/blogs';
@@ -527,7 +525,6 @@ const Map<String, String> _adminEnglishTranslations = <String, String>{
   '用戶支援': 'User support',
   'WhatsApp 查詢': 'WhatsApp enquiry',
   'LINE 聯絡': 'LINE contact',
-  'WhatsApp 群組': 'WhatsApp group',
   'QQ 頻道': 'QQ channel',
 };
 
@@ -557,7 +554,6 @@ const Map<String, String> _adminSimplifiedTranslations = <String, String>{
   '用戶支援': '用户支持',
   'WhatsApp 查詢': 'WhatsApp 查询',
   'LINE 聯絡': 'LINE 联系',
-  'WhatsApp 群組': 'WhatsApp 群组',
   'QQ 頻道': 'QQ 频道',
 };
 
@@ -2504,14 +2500,6 @@ class _NetworkSupportRow extends StatelessWidget {
                   color: Color(0xFF06C755),
                   size: 22,
                 ),
-              ),
-              const SizedBox(width: 6),
-              IconButton.filledTonal(
-                key: const ValueKey('whatsapp-group-button'),
-                tooltip: _localizedUiText('WhatsApp 群組', language: language),
-                onPressed: () =>
-                    unawaited(_openExternalUrl(context, whatsAppGroupUrl)),
-                icon: const Icon(Icons.groups_outlined),
               ),
               const SizedBox(width: 6),
               IconButton.filledTonal(
@@ -13558,6 +13546,8 @@ class MeshChatService extends ChangeNotifier {
   WifiTransportMode _offlineTransportMode = WifiTransportMode.wifi;
   bool _offlineTransportReady = true;
   bool _onlineConnecting = false;
+  bool _peerHeartbeatBusy = false;
+  DateTime? _lastPeerHeartbeatAt;
   bool _rejoiningTransport = false;
   DeviceLocation? _myLocation;
   String _displayName;
@@ -14406,6 +14396,7 @@ class MeshChatService extends ChangeNotifier {
     }
 
     _rejoiningTransport = true;
+    final previousPeers = _peers.values.toList();
     try {
       await _closeTransport();
       _isRunning = false;
@@ -14423,6 +14414,12 @@ class MeshChatService extends ChangeNotifier {
 
       _status = '已自動重接光點節點，正在重新尋找同伴。';
       _announcePresenceBurst();
+      // A returning iPhone may be on a hotspot that suppresses broadcast.
+      // Reuse known endpoints, but wait for a reply before showing them online.
+      final hello = _helloPacket();
+      await Future.wait(
+        previousPeers.map((peer) => _sendJson(peer.host, peer.port, hello)),
+      );
       notifyListeners();
     } finally {
       _rejoiningTransport = false;
@@ -14451,6 +14448,7 @@ class MeshChatService extends ChangeNotifier {
     await _tcpServer?.close();
     _tcpServer = null;
     _lastHelloReplyAt.clear();
+    _lastPeerHeartbeatAt = null;
   }
 
   Future<void> _connectOnlineRelay() async {
@@ -15441,7 +15439,19 @@ class MeshChatService extends ChangeNotifier {
     );
 
     if (!fromOnline && packet['helloReply'] != true) {
-      unawaited(_sendHelloReply(peerId, remoteHost, peerPort));
+      unawaited(
+        _sendHelloReply(
+          peerId,
+          remoteHost,
+          peerPort,
+          heartbeat: packet['heartbeat'] == true,
+        ),
+      );
+    }
+
+    // A keepalive confirms presence without retransmitting all recent state.
+    if (!fromOnline && packet['heartbeat'] == true) {
+      return;
     }
 
     if (fromOnline) {
@@ -15878,6 +15888,34 @@ class MeshChatService extends ChangeNotifier {
     }
 
     _sendUdpDiscoveryPacket(_helloPacket());
+    unawaited(_announcePeerHeartbeats());
+  }
+
+  Future<void> _announcePeerHeartbeats() async {
+    if (_peerHeartbeatBusy || _peers.isEmpty) {
+      return;
+    }
+    final now = DateTime.now();
+    final lastHeartbeat = _lastPeerHeartbeatAt;
+    if (lastHeartbeat != null &&
+        now.difference(lastHeartbeat) < _announcementInterval) {
+      return;
+    }
+
+    _lastPeerHeartbeatAt = now;
+    _peerHeartbeatBusy = true;
+    try {
+      // Hotspots can suppress UDP broadcast even while TCP remains usable.
+      // Probe known peers directly; only incoming packets refresh lastSeen.
+      final packet = _helloPacket(heartbeat: true);
+      await Future.wait(
+        _peers.values.toList().map(
+          (peer) => _sendJson(peer.host, peer.port, packet),
+        ),
+      );
+    } finally {
+      _peerHeartbeatBusy = false;
+    }
   }
 
   void _announcePresenceBurst() {
@@ -15914,7 +15952,7 @@ class MeshChatService extends ChangeNotifier {
     unawaited(_sendPacketToPeers(packet));
   }
 
-  Map<String, Object?> _helloPacket({bool reply = false}) {
+  Map<String, Object?> _helloPacket({bool reply = false, bool heartbeat = false}) {
     final location = _myLocation;
     return <String, Object?>{
       'kind': _helloKind,
@@ -15927,29 +15965,32 @@ class MeshChatService extends ChangeNotifier {
       'sosActive': _sosActive,
       'sentAt': DateTime.now().toUtc().toIso8601String(),
       'site': 'AIECO.HK',
-      'rooms': rooms.map((room) => room.toMap()).toList(),
-      'activities': radarActivities
-          .where(_activityPassesModeration)
-          .map((activity) => activity.toMap())
-          .toList(),
-      'helpRequests': _helpRequests.values
-          .where(
-            (request) =>
-                !_blockedUserIds.contains(request.requesterId) &&
-                _helpRequestPassesModeration(request),
-          )
-          .map((request) => request.toMap())
-          .toList(),
-      'supplies': _supplies.values
-          .where(
-            (supply) =>
-                !_blockedUserIds.contains(supply.offeredById) &&
-                _supplyPassesModeration(supply),
-          )
-          .map((supply) => supply.toMap())
-          .toList(),
-      'creditVotes': _creditVotes.values.map((vote) => vote.toMap()).toList(),
-      if (location != null) 'location': location.toMap(),
+      if (heartbeat) 'heartbeat': true,
+      if (!heartbeat) ...{
+        'rooms': rooms.map((room) => room.toMap()).toList(),
+        'activities': radarActivities
+            .where(_activityPassesModeration)
+            .map((activity) => activity.toMap())
+            .toList(),
+        'helpRequests': _helpRequests.values
+            .where(
+              (request) =>
+                  !_blockedUserIds.contains(request.requesterId) &&
+                  _helpRequestPassesModeration(request),
+            )
+            .map((request) => request.toMap())
+            .toList(),
+        'supplies': _supplies.values
+            .where(
+              (supply) =>
+                  !_blockedUserIds.contains(supply.offeredById) &&
+                  _supplyPassesModeration(supply),
+            )
+            .map((supply) => supply.toMap())
+            .toList(),
+        'creditVotes': _creditVotes.values.map((vote) => vote.toMap()).toList(),
+        if (location != null) 'location': location.toMap(),
+      },
     };
   }
 
@@ -16109,8 +16150,9 @@ class MeshChatService extends ChangeNotifier {
   Future<void> _sendHelloReply(
     String peerId,
     String remoteHost,
-    int peerPort,
-  ) async {
+    int peerPort, {
+    bool heartbeat = false,
+  }) async {
     if (!_presenceVisible) {
       return;
     }
@@ -16122,7 +16164,11 @@ class MeshChatService extends ChangeNotifier {
     }
 
     _lastHelloReplyAt[key] = DateTime.now();
-    await _sendJson(remoteHost, peerPort, _helloPacket(reply: true));
+    await _sendJson(
+      remoteHost,
+      peerPort,
+      _helloPacket(reply: true, heartbeat: heartbeat),
+    );
   }
 
   void _sendUdpDiscoveryPacket(Map<String, Object?> packet) {
@@ -16873,6 +16919,13 @@ class MeshChatService extends ChangeNotifier {
         type: InternetAddressType.IPv4,
       );
       return interfaces
+          // Cellular address changes must not restart a healthy iOS WiFi LAN.
+          .where(
+            (networkInterface) =>
+                !Platform.isIOS ||
+                _offlineTransportMode != WifiTransportMode.wifi ||
+                networkInterface.name == 'en0',
+          )
           .expand((networkInterface) => networkInterface.addresses)
           .map((address) => address.address)
           .where((address) => !address.startsWith('127.'))

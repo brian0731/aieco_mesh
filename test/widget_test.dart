@@ -1062,7 +1062,7 @@ void main() {
     expect(find.text('https://www.aieco.hk'), findsNothing);
   });
 
-  testWidgets('network page exposes four user support links', (
+  testWidgets('network page exposes three user support links', (
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -1084,7 +1084,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('line-support-button')), findsOneWidget);
-    expect(find.byKey(const ValueKey('whatsapp-group-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('whatsapp-group-button')), findsNothing);
     expect(find.byKey(const ValueKey('qq-channel-button')), findsOneWidget);
     expect(
       find.byWidgetPredicate(
@@ -1094,7 +1094,7 @@ void main() {
     );
     expect(find.byTooltip('WhatsApp 查詢'), findsOneWidget);
     expect(find.byTooltip('LINE 聯絡'), findsOneWidget);
-    expect(find.byTooltip('WhatsApp 群組'), findsOneWidget);
+    expect(find.byTooltip('WhatsApp 群組'), findsNothing);
     expect(find.byTooltip('QQ 頻道'), findsOneWidget);
 
     expect(
@@ -1102,10 +1102,6 @@ void main() {
       'https://wa.me/+85262112160?text=%E6%83%B3%E6%9F%A5%E8%A9%A2%E5%85%89%E7%B6%B2%E6%94%AF%E6%8F%B4',
     );
     expect(lineSupportUrl, 'https://line.me/ti/p/7elEusTH6q');
-    expect(
-      whatsAppGroupUrl,
-      'https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm?s=cl&p=a&ilr=0',
-    );
     expect(qqChannelUrl, 'https://pd.qq.com/s/fasn44zz5?b=5');
   });
 

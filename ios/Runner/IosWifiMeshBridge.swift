@@ -32,6 +32,7 @@ final class IosWifiMeshBridge: NSObject {
   private var pendingLocationLowPower = false
   private var pendingLocationMaxCacheAge: TimeInterval = 120
   private var wifiAvailable = false
+  private var wifiAddressSignature = ""
   private var transportMode = IosWifiMeshBridge.transportWifi
   private var networkGeneration = 0
 
@@ -530,9 +531,10 @@ final class IosWifiMeshBridge: NSObject {
   }
 
   private func status(message: String? = nil) -> [String: Any] {
+    refreshWifiNetworkState()
     let wifiMode = transportMode == Self.transportWifi
     let bluetoothMode = transportMode == Self.transportBluetooth
-    let wifiReady = wifiAvailable || hasLocalWifiAddress()
+    let wifiReady = wifiAvailable
     var payload: [String: Any] = [
       "capabilities": capabilities(),
       "peers": currentPeers(),
@@ -677,10 +679,16 @@ final class IosWifiMeshBridge: NSObject {
   }
 
   private func restartDiscoveryForTransportMode() {
+    browser?.delegate = nil
     browser?.stop()
     browser = nil
+    localService?.delegate = nil
     localService?.stop()
     localService = nil
+    for service in servicesByName.values {
+      service.delegate = nil
+      service.stop()
+    }
     servicesByName.removeAll()
     peersByKey.removeAll()
   }
@@ -728,28 +736,44 @@ final class IosWifiMeshBridge: NSObject {
       return
     }
 
-    let monitor = NWPathMonitor()
-    monitor.pathUpdateHandler = { [weak self] path in
-      let nextWifiAvailable = path.status == .satisfied && path.usesInterfaceType(.wifi)
+    // Observe WiFi independently of the default internet route. An Android
+    // offline hotspot may coexist with a cellular internet connection.
+    let monitor = NWPathMonitor(requiredInterfaceType: .wifi)
+    monitor.pathUpdateHandler = { [weak self] _ in
       DispatchQueue.main.async {
-        guard let strongSelf = self else { return }
-        if strongSelf.wifiAvailable != nextWifiAvailable {
-          strongSelf.wifiAvailable = nextWifiAvailable
-          strongSelf.networkGeneration += 1
-        }
+        self?.refreshWifiNetworkState()
       }
     }
     monitor.start(queue: pathQueue)
     pathMonitor = monitor
   }
 
-  private func hasLocalWifiAddress() -> Bool {
+  private func refreshWifiNetworkState() {
+    let nextSignature = localWifiAddresses().sorted().joined(separator: "|")
+    guard wifiAddressSignature != nextSignature else { return }
+
+    wifiAddressSignature = nextSignature
+    wifiAvailable = !nextSignature.isEmpty
+    networkGeneration += 1
+
+    // Re-resolve Bonjour endpoints only when our WiFi interface changes.
+    // Finding or losing a peer must not restart Dart's listening sockets.
+    let discoveryStarted = browser != nil || localService != nil
+    if discoveryStarted {
+      restartDiscoveryForTransportMode()
+      startLocalService()
+      startBrowsing()
+    }
+  }
+
+  private func localWifiAddresses() -> [String] {
     var interfaces: UnsafeMutablePointer<ifaddrs>?
     guard getifaddrs(&interfaces) == 0, let first = interfaces else {
-      return false
+      return []
     }
     defer { freeifaddrs(interfaces) }
 
+    var addresses: [String] = []
     var cursor: UnsafeMutablePointer<ifaddrs>? = first
     while let current = cursor {
       defer { cursor = current.pointee.ifa_next }
@@ -761,10 +785,21 @@ final class IosWifiMeshBridge: NSObject {
       }
       if address.pointee.sa_family == UInt8(AF_INET),
          String(cString: current.pointee.ifa_name) == "en0" {
-        return true
+        var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        if getnameinfo(
+          address,
+          socklen_t(address.pointee.sa_len),
+          &hostBuffer,
+          socklen_t(hostBuffer.count),
+          nil,
+          0,
+          NI_NUMERICHOST
+        ) == 0 {
+          addresses.append(String(cString: hostBuffer))
+        }
       }
     }
-    return false
+    return addresses
   }
 
   private func remember(service: NetService) {
@@ -778,6 +813,9 @@ final class IosWifiMeshBridge: NSObject {
     }
 
     let key = "\(host):\(service.port)"
+    peersByKey = peersByKey.filter { _, peer in
+      (peer["deviceName"] as? String) != service.name
+    }
     peersByKey[key] = [
       "deviceName": service.name.isEmpty ? "iOS LAN peer" : service.name,
       "deviceAddress": key,
@@ -795,7 +833,6 @@ final class IosWifiMeshBridge: NSObject {
       "host": host,
       "port": service.port
     ]
-    networkGeneration += 1
   }
 
   private func resolvedHosts(from service: NetService) -> [String] {
@@ -834,6 +871,7 @@ extension IosWifiMeshBridge: NetServiceBrowserDelegate {
     didFind service: NetService,
     moreComing: Bool
   ) {
+    guard self.browser === browser else { return }
     if service.name == localService?.name {
       return
     }
@@ -847,6 +885,10 @@ extension IosWifiMeshBridge: NetServiceBrowserDelegate {
     _ browser: NetServiceBrowser,
     didNotSearch errorDict: [String: NSNumber]
   ) {
+    guard self.browser === browser else { return }
+    browser.delegate = nil
+    browser.stop()
+    self.browser = nil
     flushPendingResolveResults()
   }
 
@@ -855,21 +897,23 @@ extension IosWifiMeshBridge: NetServiceBrowserDelegate {
     didRemove service: NetService,
     moreComing: Bool
   ) {
+    guard self.browser === browser else { return }
     servicesByName.removeValue(forKey: service.name)
     peersByKey = peersByKey.filter { _, peer in
       (peer["deviceName"] as? String) != service.name
     }
-    networkGeneration += 1
   }
 }
 
 extension IosWifiMeshBridge: NetServiceDelegate {
   func netServiceDidResolveAddress(_ sender: NetService) {
+    guard servicesByName[sender.name] === sender else { return }
     remember(service: sender)
     flushPendingResolveResults()
   }
 
   func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
+    guard servicesByName[sender.name] === sender else { return }
     servicesByName.removeValue(forKey: sender.name)
   }
 }
