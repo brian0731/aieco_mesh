@@ -21,8 +21,6 @@ https://play.google.com/store/apps/details?id=aieco.light.mesh
 ## 光網連接教學:
 https://www.youtube.com/watch?v=q94Pgn1gSVc
 
-## Whatsapp 防災預備與互助群組:
-https://chat.whatsapp.com/IfrUPp6JksiGPKboEplvgm?s=cl&p=a&ilr=0
 
 ## 文件
 
@@ -185,6 +183,14 @@ Google Map key 可一起帶入：
 ```powershell
 flutter build apk --release --dart-define=GOOGLE_MAPS_API_KEY=你的_KEY --dart-define=AIECO_ONLINE_RELAY_URL=wss://YOUR_RELAY_DOMAIN/ws/light
 ```
+
+上載 Google Play 的 AAB 要用 `appbundle`；`flutter build bundle` 只會產生 Flutter 資源，不能直接安裝或上載 Google Play。
+
+```powershell
+flutter build appbundle --release --dart-define=GOOGLE_MAPS_API_KEY=你的_KEY --dart-define=AIECO_ONLINE_RELAY_URL=wss://YOUR_RELAY_DOMAIN/ws/light
+```
+
+Release AAB 輸出到 `build\app\outputs\bundle\release\app-release.aab`。直接安裝到 Android 手機請使用 Release APK：`build\app\outputs\flutter-apk\app-release.apk`。
 
 Debug APK 會輸出到：
 
