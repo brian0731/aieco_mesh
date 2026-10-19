@@ -14,6 +14,7 @@ void main() {
   int? stalledPort;
   Completer<Socket>? stalledConnection;
   final failNextConnection = <int>{};
+  final unavailablePorts = <int>{};
 
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -21,10 +22,12 @@ void main() {
     stalledPort = null;
     stalledConnection = null;
     failNextConnection.clear();
+    unavailablePorts.clear();
     mesh = MeshChatService(
       connectLanSocket: (host, port) {
         if (port == stalledPort) return stalledConnection!.future;
-        if (failNextConnection.remove(port)) {
+        if (unavailablePorts.contains(port) ||
+            failNextConnection.remove(port)) {
           return Future<Socket>.error(
             const SocketException('Transient failure'),
           );
@@ -184,6 +187,113 @@ void main() {
     expect(mesh.peers.single.supportsChatAck, isTrue);
   });
 
+  test('failed chat is retried without a hello or history sync', () async {
+    peer.supportsChatAck = true;
+    await _waitForChatAckSupport(mesh, peer);
+    peer.respondToHello = false;
+    unavailablePorts.add(peer.server.port);
+    await mesh.sendMessage('Android 傳 iOS 斷線補送');
+    final messageId = mesh.messages.last.id;
+
+    final incoming = peer.packets.firstWhere(
+      (packet) => packet['messageId'] == messageId,
+    );
+    unavailablePorts.clear();
+    final packet = await incoming.timeout(const Duration(seconds: 3));
+    expect(packet['text'], 'Android 傳 iOS 斷線補送');
+    expect(packet['chatAckRequested'], isTrue);
+  });
+
+  test('a compact heartbeat immediately retries an unconfirmed chat', () async {
+    peer.supportsChatAck = true;
+    await _waitForChatAckSupport(mesh, peer);
+    peer.respondToHello = false;
+    peer.dropChatAcks = 2;
+    await mesh.sendMessage('兩次確認遺失後補送');
+    final messageId = mesh.messages.last.id;
+    final incoming = peer.packets.firstWhere(
+      (packet) => packet['messageId'] == messageId,
+    );
+    await peer.sendHello();
+    expect(
+      (await incoming.timeout(const Duration(milliseconds: 800)))['messageId'],
+      messageId,
+    );
+    // A confirmed delivery must leave the retry queue.
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    expect(
+      peer.received.where((packet) => packet['messageId'] == messageId),
+      hasLength(3),
+    );
+  });
+
+  test('automatic transport rejoin preserves unconfirmed chat', () async {
+    peer.supportsChatAck = true;
+    await _waitForChatAckSupport(mesh, peer);
+    unavailablePorts.add(peer.server.port);
+    await mesh.sendMessage('重接後補送');
+    final messageId = mesh.messages.last.id;
+    final incoming = peer.packets.firstWhere(
+      (packet) => packet['messageId'] == messageId,
+    );
+    unavailablePorts.clear();
+    await mesh.refreshNetworkPresence(forceRejoin: true);
+    expect(
+      (await incoming.timeout(const Duration(seconds: 2)))['text'],
+      '重接後補送',
+    );
+  });
+
+  test(
+    'explicit stop cancels a chat retry across a subsequent start',
+    () async {
+      stalledPort = peer.server.port;
+      stalledConnection = Completer<Socket>();
+      final sending = mesh.sendMessage('停止前的未送出訊息');
+      await mesh.stop();
+      await mesh.start();
+      stalledPort = null;
+      await peer.sendHello();
+      await _waitForPeer(mesh);
+      stalledConnection!.completeError(const SocketException('Disconnected'));
+      await sending;
+      expect(
+        peer.received.where(
+          (packet) => packet['kind'] == 'aieco.light.chat.v1',
+        ),
+        isEmpty,
+      );
+    },
+  );
+
+  test('recovery delivers more than the 20-message history window', () async {
+    mesh.setOfflineTransportMode(WifiTransportMode.wifi, ready: false);
+    for (var index = 0; index < 25; index++) {
+      await mesh.sendMessage('離線補送 $index');
+    }
+    final expectedIds = mesh.messages.map((message) => message.id).toSet();
+    final receivedIds = <String>{};
+    final allReceived = Completer<void>();
+    final subscription = peer.packets.listen((packet) {
+      if (expectedIds.contains(packet['messageId'])) {
+        receivedIds.add(packet['messageId'] as String);
+        if (receivedIds.length == expectedIds.length &&
+            !allReceived.isCompleted) {
+          allReceived.complete();
+        }
+      }
+    });
+    peer.supportsChatAck = true;
+    try {
+      mesh.setOfflineTransportMode(WifiTransportMode.wifi, ready: true);
+      await peer.sendHello();
+      await allReceived.future.timeout(const Duration(seconds: 5));
+      expect(receivedIds, expectedIds);
+    } finally {
+      await subscription.cancel();
+    }
+  });
+
   test('chat waits for Android receipt on the same TCP connection', () async {
     peer.supportsChatAck = true;
     await _waitForChatAckSupport(mesh, peer);
@@ -253,7 +363,7 @@ void main() {
         .toList();
     expect(attempts, hasLength(2));
     expect(attempts[0]['messageId'], attempts[1]['messageId']);
-    expect(mesh.status, contains('未找到其他'));
+    expect(mesh.status, contains('正在自動補送'));
   });
 
   test(

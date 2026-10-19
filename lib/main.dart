@@ -13412,6 +13412,16 @@ class MeshModerationReport {
   }
 }
 
+class _PendingLanChat {
+  _PendingLanChat(this.packet, this.peer) : queuedAt = DateTime.now();
+
+  final Map<String, Object?> packet;
+  final DateTime queuedAt;
+  MeshPeer? peer;
+  bool sending = false;
+  DateTime? retryAfter;
+}
+
 class MeshChatService extends ChangeNotifier {
   // Tests may supply a connector to simulate a stalled peer deterministically.
   MeshChatService({Future<Socket> Function(String, int)? connectLanSocket})
@@ -13480,6 +13490,10 @@ class MeshChatService extends ChangeNotifier {
   ];
   static const Duration _helloReplyThrottle = Duration(seconds: 8);
   static const Duration _peerTtl = Duration(seconds: 18);
+  static const Duration _chatRetryInterval = Duration(seconds: 1);
+  static const Duration _pendingChatTtl = Duration(minutes: 5);
+  static const int _maxPendingChats = 300;
+  static const int _maxConcurrentChatRetries = 8;
   static const Duration _locationTtl = Duration(minutes: 30);
   static const String _fallbackDistrictCode = 'HK';
   static const String _defaultUserName = '光之子';
@@ -13524,6 +13538,7 @@ class MeshChatService extends ChangeNotifier {
   final Set<String> _seenRoomIds = <String>{_defaultRoomId};
   final Map<String, DateTime> _lastSyncAt = <String, DateTime>{};
   final Map<String, DateTime> _lastHelloReplyAt = <String, DateTime>{};
+  final Map<String, _PendingLanChat> _pendingLanChats = {};
   final Set<String> _blockedUserIds = <String>{};
   final Map<String, String> _blockedUserNames = <String, String>{};
   final Set<String> _hiddenMessageIds = <String>{};
@@ -13543,6 +13558,8 @@ class MeshChatService extends ChangeNotifier {
   Timer? _announcementTimer;
   Timer? _cleanupTimer;
   Timer? _onlineReconnectTimer;
+  Timer? _chatRetryTimer;
+  int _lanChatGeneration = 0;
   Future<void>? _startFuture;
   MeshNetworkMode _networkMode = _onlineRelayUrl.isEmpty
       ? MeshNetworkMode.offline
@@ -14268,6 +14285,7 @@ class MeshChatService extends ChangeNotifier {
     _rejoiningTransport = false;
     _clearPeerPresence();
     _networkMode = mode;
+    _clearPendingLanChats();
 
     _status = switch (mode) {
       MeshNetworkMode.online =>
@@ -14390,6 +14408,7 @@ class MeshChatService extends ChangeNotifier {
     }
 
     _isRunning = false;
+    _clearPendingLanChats();
     await _closeTransport();
     _startFuture = null;
     _rejoiningTransport = false;
@@ -15460,6 +15479,9 @@ class MeshChatService extends ChangeNotifier {
       sosActive: sosActive,
       supportsChatAck: packet['chatAck'] == true,
     );
+    if (!fromOnline) {
+      _retryPendingLanChats(activePeer: _peers[peerId]);
+    }
     _rememberRoomsFromList(packet['rooms']);
     _rememberActivitiesFromList(packet['activities']);
     _rememberHelpRequestsFromList(packet['helpRequests']);
@@ -15986,7 +16008,10 @@ class MeshChatService extends ChangeNotifier {
     unawaited(_sendPacketToPeers(packet));
   }
 
-  Map<String, Object?> _helloPacket({bool reply = false, bool heartbeat = false}) {
+  Map<String, Object?> _helloPacket({
+    bool reply = false,
+    bool heartbeat = false,
+  }) {
     final location = _myLocation;
     return <String, Object?>{
       'kind': _helloKind,
@@ -16078,6 +16103,11 @@ class MeshChatService extends ChangeNotifier {
     if (_networkMode == MeshNetworkMode.online) {
       return await _sendPacketToOnline(packet) ? 1 : 0;
     }
+    if (packet['kind'] == _chatKind &&
+        packet['senderId'] == _nodeId &&
+        (!_offlineTransportReady || _peers.isEmpty)) {
+      _queuePendingLanChat(packet);
+    }
     if (!_offlineTransportReady) {
       return 0;
     }
@@ -16098,6 +16128,9 @@ class MeshChatService extends ChangeNotifier {
     }
     if (!_offlineTransportReady) {
       return _offlineTransportStatus();
+    }
+    if (delivered == 0 && _peers.isNotEmpty && _pendingLanChats.isNotEmpty) {
+      return '訊息尚未確認送達，正在自動補送。';
     }
 
     return delivered == 0
@@ -16164,6 +16197,7 @@ class MeshChatService extends ChangeNotifier {
     MeshPeer peer,
     Map<String, Object?> packet,
   ) async {
+    final generation = _lanChatGeneration;
     final ackMessageId = packet['kind'] == _chatKind && peer.supportsChatAck
         ? _stringValue(packet['messageId'])
         : null;
@@ -16182,14 +16216,141 @@ class MeshChatService extends ChangeNotifier {
     // Retry a transient chat failure promptly instead of waiting for the
     // 15-second history sync. Message IDs already deduplicate any redelivery.
     await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (generation != _lanChatGeneration) return false;
     if (_disposed ||
         !_isRunning ||
         _networkMode != MeshNetworkMode.offline ||
         !_offlineTransportReady ||
         _blockedUserIds.contains(peer.id)) {
+      _queuePendingLanChat(packet, peer: peer);
       return false;
     }
-    return _sendJson(peer.host, peer.port, packet, ackMessageId: ackMessageId);
+    final delivered = await _sendJson(
+      peer.host,
+      peer.port,
+      packet,
+      ackMessageId: ackMessageId,
+    );
+    if (!delivered && generation == _lanChatGeneration) {
+      _queuePendingLanChat(packet, peer: peer);
+    }
+    return delivered;
+  }
+
+  void _queuePendingLanChat(Map<String, Object?> packet, {MeshPeer? peer}) {
+    if (_disposed ||
+        (!_isRunning && !_rejoiningTransport) ||
+        _networkMode != MeshNetworkMode.offline) {
+      return;
+    }
+    final messageId = _stringValue(packet['messageId']);
+    if (messageId == null) return;
+    final key = '${peer?.id ?? '*'}:$messageId';
+    _pendingLanChats.putIfAbsent(
+      key,
+      () => _PendingLanChat(Map<String, Object?>.from(packet), peer),
+    );
+    while (_pendingLanChats.length > _maxPendingChats) {
+      _pendingLanChats.remove(_pendingLanChats.keys.first);
+    }
+    _schedulePendingChatRetry();
+  }
+
+  void _schedulePendingChatRetry() {
+    if (_chatRetryTimer != null || _pendingLanChats.isEmpty || _disposed) {
+      return;
+    }
+    _chatRetryTimer = Timer(_chatRetryInterval, () {
+      _chatRetryTimer = null;
+      _retryPendingLanChats();
+      _schedulePendingChatRetry();
+    });
+  }
+
+  void _retryPendingLanChats({MeshPeer? activePeer}) {
+    final now = DateTime.now();
+    _pendingLanChats.removeWhere((_, pending) {
+      final packet = pending.packet;
+      return now.difference(pending.queuedAt) > _pendingChatTtl ||
+          _hiddenMessageIds.contains(packet['messageId']) ||
+          _adminDeletedMessageIds.contains(packet['messageId']) ||
+          _adminDeletedRoomIds.contains(packet['roomId']) ||
+          _mutedUserIds.contains(packet['senderId']) ||
+          _blockedUserIds.contains(packet['senderId']) ||
+          _blockedUserIds.contains(pending.peer?.id);
+    });
+    if (_disposed ||
+        !_isRunning ||
+        !_presenceVisible ||
+        _networkMode != MeshNetworkMode.offline ||
+        !_offlineTransportReady) {
+      return;
+    }
+    var available =
+        _maxConcurrentChatRetries -
+        _pendingLanChats.values.where((pending) => pending.sending).length;
+    final peers = _peers.values
+        .where((peer) => !_blockedUserIds.contains(peer.id))
+        .toList();
+    for (final entry in _pendingLanChats.entries.toList()) {
+      if (available <= 0) break;
+      final pending = entry.value;
+      if (pending.sending) continue;
+      final previousPeer = pending.peer;
+      bool matches(MeshPeer peer) =>
+          previousPeer == null ||
+          peer.id == previousPeer.id ||
+          (peer.host == previousPeer.host && peer.port == previousPeer.port);
+      // A received hello is evidence that this endpoint is available again.
+      // It bypasses retry backoff, but never starts a second concurrent send.
+      if (activePeer != null && !matches(activePeer)) continue;
+      if (activePeer == null &&
+          pending.retryAfter != null &&
+          now.isBefore(pending.retryAfter!)) {
+        continue;
+      }
+      final peer =
+          activePeer ?? peers.where(matches).firstOrNull ?? previousPeer;
+      if (peer == null) continue;
+      pending.peer = peer;
+      pending.sending = true;
+      available--;
+      unawaited(_retryPendingLanChat(entry.key, pending, peer));
+    }
+  }
+
+  Future<void> _retryPendingLanChat(
+    String key,
+    _PendingLanChat pending,
+    MeshPeer peer,
+  ) async {
+    final delivered = await _sendJson(
+      peer.host,
+      peer.port,
+      pending.packet,
+      ackMessageId: peer.supportsChatAck
+          ? _stringValue(pending.packet['messageId'])
+          : null,
+    );
+    if (!identical(_pendingLanChats[key], pending)) return;
+    pending.sending = false;
+    // Rotate failed deliveries so an unavailable peer cannot starve the queue.
+    _pendingLanChats.remove(key);
+    if (!delivered) {
+      pending.retryAfter = DateTime.now().add(_chatRetryInterval);
+      _pendingLanChats[key] = pending;
+    } else if (!_disposed && _isRunning) {
+      _status = '訊息已補送到 ${peer.name}。';
+      notifyListeners();
+    }
+    _retryPendingLanChats();
+  }
+
+  void _clearPendingLanChats() {
+    _lanChatGeneration++;
+    _chatRetryTimer?.cancel();
+    _chatRetryTimer = null;
+    _pendingLanChats.clear();
   }
 
   static Future<Socket> _defaultConnectLanSocket(String host, int port) {
@@ -16220,6 +16381,7 @@ class MeshChatService extends ChangeNotifier {
       void finishAcknowledgement(bool received) {
         if (!acknowledged.isCompleted) acknowledged.complete(received);
       }
+
       if (ackMessageId != null) {
         replies = socket
             .cast<List<int>>()
@@ -17221,6 +17383,7 @@ class MeshChatService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _clearPendingLanChats();
     if (_isRunning) {
       _announceGoodbye();
     }
