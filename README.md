@@ -31,6 +31,7 @@ https://www.youtube.com/watch?v=q94Pgn1gSVc
 
 - 線上光之網絡：透過 `AIECO_ONLINE_RELAY_URL` WebSocket relay 傳送聊天、光團、物資、信用和定位 packet。
 - 離線 LAN mesh chat：UDP 自動發現節點，TCP 傳送訊息。
+- 離線聊天接收確認：兩端皆為新版時，接收端會在同一條 TCP 連線回覆確認；1 秒內未收到確認會快速重試一次，訊息 ID 可避免重複顯示。與舊版連線時沿用原有傳送方式。
 - 藍芽 Mesh：Android 可優先使用藍芽網絡共享（Bluetooth PAN）；iOS 可使用系統 peer-to-peer 搜尋附近光點，訊息沿用 app-layer mesh 多 hop 轉發。
 - 多 hop 訊息轉發：收到新訊息後會向其他已知節點再傳播。
 - 光之通道：聊天、光團、在線用家、用戶信用、物資分享、物資已取完狀態。

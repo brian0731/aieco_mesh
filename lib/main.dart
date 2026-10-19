@@ -13413,8 +13413,10 @@ class MeshModerationReport {
 }
 
 class MeshChatService extends ChangeNotifier {
-  MeshChatService()
-    : _nodeId = _newId('node'),
+  // Tests may supply a connector to simulate a stalled peer deterministically.
+  MeshChatService({Future<Socket> Function(String, int)? connectLanSocket})
+    : _connectLanSocket = connectLanSocket ?? _defaultConnectLanSocket,
+      _nodeId = _newId('node'),
       _displayName = _newDisplayName(),
       _userName = _defaultUserName {
     _seenMessageIds.add(_nodeId);
@@ -13431,6 +13433,7 @@ class MeshChatService extends ChangeNotifier {
   static const String _helloKind = 'aieco.light.hello.v1';
   static const String _byeKind = 'aieco.light.bye.v1';
   static const String _chatKind = 'aieco.light.chat.v1';
+  static const String _chatAckKind = 'aieco.light.chat_ack.v1';
   static const String _roomKind = 'aieco.light.room.v1';
   static const String _locationKind = 'aieco.light.location.v1';
   static const String _activityKind = 'aieco.light.activity.v1';
@@ -13506,6 +13509,7 @@ class MeshChatService extends ChangeNotifier {
   static final Random _random = Random.secure();
 
   String _nodeId;
+  final Future<Socket> Function(String, int) _connectLanSocket;
   final Map<String, MeshPeer> _peers = <String, MeshPeer>{};
   final Map<String, RadarContact> _peerLocations = <String, RadarContact>{};
   final Map<String, MeshRadarActivity> _activities =
@@ -14364,14 +14368,18 @@ class MeshChatService extends ChangeNotifier {
       return;
     }
 
-    _rememberPeer(
-      id: 'endpoint:$host:$port',
-      name: name,
-      host: host,
-      port: port,
-      notify: false,
-    );
-    await _syncRecentState(host, port);
+    // Keep an identity and negotiated capabilities already learned by hello.
+    // A manual LAN reconnect must not replace them with a placeholder peer.
+    if (!_peers.values.any((peer) => peer.host == host && peer.port == port)) {
+      _rememberPeer(
+        id: 'endpoint:$host:$port',
+        name: name,
+        host: host,
+        port: port,
+        notify: false,
+      );
+    }
+    await _throttledSync(host, port);
     _status = '已連接 $name，正在透過 WiFi LAN mesh 同步。';
     notifyListeners();
   }
@@ -15224,16 +15232,33 @@ class MeshChatService extends ChangeNotifier {
   }
 
   void _handleIncomingSocket(Socket socket) {
+    socket.setOption(SocketOption.tcpNoDelay, true);
     socket
         .cast<List<int>>()
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen(
-          (line) => _handlePacketLine(line, socket.remoteAddress.address),
+          (line) => _handlePacketLine(
+            line,
+            socket.remoteAddress.address,
+            sendReply: (packet) => unawaited(_writeSocketReply(socket, packet)),
+          ),
           onDone: socket.destroy,
           onError: (_) => socket.destroy(),
           cancelOnError: true,
         );
+  }
+
+  Future<void> _writeSocketReply(
+    Socket socket,
+    Map<String, Object?> packet,
+  ) async {
+    try {
+      socket.writeln(jsonEncode(packet));
+      await socket.flush().timeout(const Duration(seconds: 2));
+    } on Object {
+      socket.destroy();
+    }
   }
 
   void _handleDiscoveryEvent(RawSocketEvent event) {
@@ -15257,6 +15282,7 @@ class MeshChatService extends ChangeNotifier {
     String remoteHost, {
     bool discoveredByUdp = false,
     bool fromOnline = false,
+    void Function(Map<String, Object?>)? sendReply,
   }) {
     final packet = _decodePacket(line);
     if (packet == null) {
@@ -15283,6 +15309,15 @@ class MeshChatService extends ChangeNotifier {
         _handleRoomPacket(packet, effectiveRemoteHost, fromOnline: fromOnline);
       case _chatKind:
         _handleChatPacket(packet, effectiveRemoteHost, fromOnline: fromOnline);
+        // Acknowledge receipt on this connection, including duplicate retries.
+        // No reverse route or later discovery cycle is needed for the reply.
+        final messageId = _stringValue(packet['messageId']);
+        if (!fromOnline &&
+            packet['chatAckRequested'] == true &&
+            messageId != null &&
+            messageId.isNotEmpty) {
+          sendReply?.call({'kind': _chatAckKind, 'messageId': messageId});
+        }
       case _locationKind:
         _handleLocationPacket(
           packet,
@@ -15423,6 +15458,7 @@ class MeshChatService extends ChangeNotifier {
       host: remoteHost,
       port: peerPort,
       sosActive: sosActive,
+      supportsChatAck: packet['chatAck'] == true,
     );
     _rememberRoomsFromList(packet['rooms']);
     _rememberActivitiesFromList(packet['activities']);
@@ -15456,10 +15492,8 @@ class MeshChatService extends ChangeNotifier {
 
     if (fromOnline) {
       unawaited(_throttledOnlineSync(peerId));
-    } else if (discoveredByUdp || packet['helloReply'] == true) {
-      unawaited(_throttledSync(remoteHost, peerPort));
     } else {
-      unawaited(_syncRecentState(remoteHost, peerPort));
+      unawaited(_throttledSync(remoteHost, peerPort));
     }
   }
 
@@ -15962,6 +15996,7 @@ class MeshChatService extends ChangeNotifier {
       'userName': _userName,
       'tcpPort': tcpPort,
       if (reply) 'helloReply': true,
+      'chatAck': true,
       'sosActive': _sosActive,
       'sentAt': DateTime.now().toUtc().toIso8601String(),
       'site': 'AIECO.HK',
@@ -16106,44 +16141,126 @@ class MeshChatService extends ChangeNotifier {
     String? exceptPeerId,
     String? exceptHost,
   }) async {
-    var delivered = 0;
     final snapshot = _peers.values.toList();
-
+    final sends = <Future<bool>>[];
+    final endpoints = <String>{};
     for (final peer in snapshot) {
       if (peer.id == exceptPeerId ||
           peer.host == exceptHost ||
           _blockedUserIds.contains(peer.id)) {
         continue;
       }
-
-      final ok = await _sendJson(peer.host, peer.port, packet);
-      if (ok) {
-        delivered += 1;
+      if (endpoints.add('${peer.host}:${peer.port}')) {
+        // A slow/unreachable peer must not hold up delivery to other peers.
+        sends.add(_sendPeerPacket(peer, packet));
       }
     }
 
-    return delivered;
+    final results = await Future.wait(sends);
+    return results.where((delivered) => delivered).length;
+  }
+
+  Future<bool> _sendPeerPacket(
+    MeshPeer peer,
+    Map<String, Object?> packet,
+  ) async {
+    final ackMessageId = packet['kind'] == _chatKind && peer.supportsChatAck
+        ? _stringValue(packet['messageId'])
+        : null;
+    if (await _sendJson(
+      peer.host,
+      peer.port,
+      packet,
+      ackMessageId: ackMessageId,
+    )) {
+      return true;
+    }
+    if (packet['kind'] != _chatKind) {
+      return false;
+    }
+
+    // Retry a transient chat failure promptly instead of waiting for the
+    // 15-second history sync. Message IDs already deduplicate any redelivery.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (_disposed ||
+        !_isRunning ||
+        _networkMode != MeshNetworkMode.offline ||
+        !_offlineTransportReady ||
+        _blockedUserIds.contains(peer.id)) {
+      return false;
+    }
+    return _sendJson(peer.host, peer.port, packet, ackMessageId: ackMessageId);
+  }
+
+  static Future<Socket> _defaultConnectLanSocket(String host, int port) {
+    return Socket.connect(host, port, timeout: const Duration(seconds: 2));
   }
 
   Future<bool> _sendJson(
     String host,
     int port,
-    Map<String, Object?> packet,
-  ) async {
+    Map<String, Object?> packet, {
+    String? ackMessageId,
+  }) async {
+    return _sendJsonBatch(host, port, [packet], ackMessageId: ackMessageId);
+  }
+
+  Future<bool> _sendJsonBatch(
+    String host,
+    int port,
+    Iterable<Map<String, Object?>> packets, {
+    String? ackMessageId,
+  }) async {
     Socket? socket;
+    StreamSubscription<String>? replies;
     try {
-      socket = await Socket.connect(
-        host,
-        port,
-        timeout: const Duration(seconds: 2),
-      );
-      socket.write('${jsonEncode(packet)}\n');
-      await socket.flush();
-      await socket.close();
+      socket = await _connectLanSocket(host, port);
+      socket.setOption(SocketOption.tcpNoDelay, true);
+      final acknowledged = Completer<bool>();
+      void finishAcknowledgement(bool received) {
+        if (!acknowledged.isCompleted) acknowledged.complete(received);
+      }
+      if (ackMessageId != null) {
+        replies = socket
+            .cast<List<int>>()
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .listen(
+              (line) {
+                final reply = _decodePacket(line);
+                if (reply?['kind'] == _chatAckKind &&
+                    reply?['messageId'] == ackMessageId) {
+                  finishAcknowledgement(true);
+                }
+              },
+              onDone: () => finishAcknowledgement(false),
+              onError: (Object _) => finishAcknowledgement(false),
+              cancelOnError: true,
+            );
+      }
+      for (final packet in packets) {
+        final wirePacket = ackMessageId == null
+            ? packet
+            : <String, Object?>{...packet, 'chatAckRequested': true};
+        socket.write('${jsonEncode(wirePacket)}\n');
+      }
+      // Bound a stalled write as well as the connection attempt.
+      await socket.flush().timeout(const Duration(seconds: 2));
+      if (ackMessageId != null &&
+          !await acknowledged.future.timeout(
+            const Duration(seconds: 1),
+            onTimeout: () => false,
+          )) {
+        socket.destroy();
+        return false;
+      }
+      await socket.close().timeout(const Duration(seconds: 2));
       return true;
     } on Object {
       socket?.destroy();
       return false;
+    } finally {
+      await replies?.cancel();
     }
   }
 
@@ -16218,10 +16335,9 @@ class MeshChatService extends ChangeNotifier {
   }
 
   Future<void> _syncRecentState(String host, int port) async {
+    final packets = <Map<String, Object?>>[];
     for (final room in rooms) {
-      await _sendJson(
-        host,
-        port,
+      packets.add(
         room.toPacket(
           senderId: _nodeId,
           senderName: _displayName,
@@ -16231,32 +16347,34 @@ class MeshChatService extends ChangeNotifier {
       );
     }
 
-    for (final supply in _supplies.values) {
-      await _sendJson(host, port, supply.toPacket(hops: 1));
-    }
-
-    for (final activity in radarActivities) {
-      await _sendJson(host, port, activity.toPacket(hops: 1));
-    }
-
-    for (final request in _helpRequests.values) {
-      await _sendJson(host, port, request.toPacket(hops: 1));
-    }
-
-    for (final vote in _creditVotes.values) {
-      await _sendJson(host, port, vote.toPacket(hops: 1));
-    }
-
+    // Send missed chat before bulk community data, on a single connection.
     final recent = _messages.length <= 20
         ? _messages
         : _messages.sublist(_messages.length - 20);
     for (final message in recent) {
-      await _sendJson(host, port, message.toPacket(hops: 1));
+      packets.add(message.toPacket(hops: 1));
+    }
+
+    for (final supply in _supplies.values) {
+      packets.add(supply.toPacket(hops: 1));
+    }
+
+    for (final activity in radarActivities) {
+      packets.add(activity.toPacket(hops: 1));
+    }
+
+    for (final request in _helpRequests.values) {
+      packets.add(request.toPacket(hops: 1));
+    }
+
+    for (final vote in _creditVotes.values) {
+      packets.add(vote.toPacket(hops: 1));
     }
 
     if (_myLocation != null) {
-      await _sendJson(host, port, _locationPacket(hops: 1));
+      packets.add(_locationPacket(hops: 1));
     }
+    await _sendJsonBatch(host, port, packets);
   }
 
   Future<void> _syncRecentStateOnline() async {
@@ -16311,6 +16429,7 @@ class MeshChatService extends ChangeNotifier {
     required String host,
     required int port,
     bool? sosActive,
+    bool? supportsChatAck,
     bool notify = true,
   }) {
     if (id == _nodeId) {
@@ -16353,6 +16472,7 @@ class MeshChatService extends ChangeNotifier {
         host: host,
         port: port,
         sosActive: sosActive ?? false,
+        supportsChatAck: supportsChatAck ?? false,
         lastSeen: DateTime.now(),
       );
     } else {
@@ -16363,6 +16483,7 @@ class MeshChatService extends ChangeNotifier {
         ..host = host
         ..port = port
         ..sosActive = sosActive ?? existing.sosActive
+        ..supportsChatAck = supportsChatAck ?? existing.supportsChatAck
         ..lastSeen = DateTime.now();
     }
     final existingContact = _peerLocations[id];
@@ -17679,6 +17800,7 @@ class MeshPeer {
     required this.port,
     required this.sosActive,
     required this.lastSeen,
+    this.supportsChatAck = false,
   });
 
   final String id;
@@ -17688,6 +17810,7 @@ class MeshPeer {
   String host;
   int port;
   bool sosActive;
+  bool supportsChatAck;
   DateTime lastSeen;
 
   bool get isOnline => host.startsWith('online:');

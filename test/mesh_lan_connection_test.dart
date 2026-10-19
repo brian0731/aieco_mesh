@@ -11,11 +11,27 @@ void main() {
 
   late MeshChatService mesh;
   late _TcpOnlyPeer peer;
+  int? stalledPort;
+  Completer<Socket>? stalledConnection;
+  final failNextConnection = <int>{};
 
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     peer = await _TcpOnlyPeer.start();
-    mesh = MeshChatService();
+    stalledPort = null;
+    stalledConnection = null;
+    failNextConnection.clear();
+    mesh = MeshChatService(
+      connectLanSocket: (host, port) {
+        if (port == stalledPort) return stalledConnection!.future;
+        if (failNextConnection.remove(port)) {
+          return Future<Socket>.error(
+            const SocketException('Transient failure'),
+          );
+        }
+        return Socket.connect(host, port, timeout: const Duration(seconds: 2));
+      },
+    );
     await mesh.start();
     expect(mesh.isRunning, isTrue, reason: mesh.status);
     final discovered = _waitForPeer(mesh);
@@ -108,10 +124,250 @@ void main() {
     expect(mesh.isRunning, isTrue);
     expect(mesh.peers.single.id, _TcpOnlyPeer.nodeId);
   });
+
+  for (final mode in WifiTransportMode.values) {
+    test(
+      '$mode delivers chat while an earlier peer is still connecting',
+      () async {
+        mesh.setOfflineTransportMode(mode, ready: true);
+        await peer.sendHello();
+        await _waitForPeer(mesh);
+        stalledPort = peer.server.port + 1;
+        stalledConnection = Completer<Socket>();
+        // The stale endpoint is first in insertion order, ahead of the receiver.
+        mesh.peers.single.port = stalledPort!;
+        await peer.sendHello(id: 'healthy-peer');
+        await _waitForPeer(mesh, id: 'healthy-peer');
+
+        final incoming = peer.packets.firstWhere(
+          (packet) => packet['kind'] == 'aieco.light.chat.v1',
+        );
+        final sending = mesh.sendMessage('即時訊息測試');
+        try {
+          final packet = await incoming.timeout(const Duration(seconds: 1));
+          expect(packet['text'], '即時訊息測試');
+          expect(stalledConnection!.isCompleted, isFalse);
+        } finally {
+          stalledConnection!.completeError(
+            const SocketException('Peer offline'),
+          );
+          await sending;
+        }
+      },
+    );
+  }
+
+  test('transient chat failure retries before the next history sync', () async {
+    final incoming = peer.packets.firstWhere(
+      (packet) => packet['kind'] == 'aieco.light.chat.v1',
+    );
+    failNextConnection.add(peer.server.port);
+    final sending = mesh.sendMessage('快速重試測試');
+    final packet = await incoming.timeout(const Duration(seconds: 1));
+    expect(packet['text'], '快速重試測試');
+    expect(await sending, isTrue);
+    expect(
+      peer.received.where((packet) => packet['kind'] == 'aieco.light.chat.v1'),
+      hasLength(1),
+    );
+  });
+
+  test('manual LAN reconnect preserves negotiated receipt support', () async {
+    peer.supportsChatAck = true;
+    await _waitForChatAckSupport(mesh, peer);
+    await mesh.syncLanEndpoint(
+      name: 'Android',
+      host: '127.0.0.1',
+      port: peer.server.port,
+    );
+    expect(mesh.peers.single.id, _TcpOnlyPeer.nodeId);
+    expect(mesh.peers.single.supportsChatAck, isTrue);
+  });
+
+  test('chat waits for Android receipt on the same TCP connection', () async {
+    peer.supportsChatAck = true;
+    await _waitForChatAckSupport(mesh, peer);
+    peer.holdChatAcks = true;
+    final incoming = peer.packets.firstWhere(
+      (packet) => packet['kind'] == 'aieco.light.chat.v1',
+    );
+    var completed = false;
+    final sending = mesh.sendMessage('iOS 傳 Android 測試').then((result) {
+      completed = true;
+      return result;
+    });
+    final packet = await incoming.timeout(const Duration(seconds: 1));
+    expect(packet['chatAckRequested'], isTrue);
+    expect(completed, isFalse);
+    await peer.releaseChatAcks();
+    expect(await sending.timeout(const Duration(seconds: 1)), isTrue);
+  });
+
+  test(
+    'missing receipt retries instead of waiting 15 seconds for history',
+    () async {
+      peer.supportsChatAck = true;
+      await _waitForChatAckSupport(mesh, peer);
+      peer.dropChatAcks = 1;
+      final attempts = <Map<String, dynamic>>[];
+      final subscription = peer.packets.listen((packet) {
+        if (packet['kind'] == 'aieco.light.chat.v1') attempts.add(packet);
+      });
+      try {
+        expect(
+          await mesh
+              .sendMessage('遺失接收確認測試')
+              .timeout(const Duration(seconds: 3)),
+          isTrue,
+        );
+        expect(attempts, hasLength(2));
+        expect(attempts[0]['messageId'], attempts[1]['messageId']);
+        expect(mesh.status, contains('1 個節點'));
+      } finally {
+        await subscription.cancel();
+      }
+    },
+  );
+
+  test(
+    'old peers still receive chat without waiting for an unsupported receipt',
+    () async {
+      final incoming = peer.packets.firstWhere(
+        (packet) => packet['kind'] == 'aieco.light.chat.v1',
+      );
+      expect(
+        await mesh.sendMessage('舊版相容測試').timeout(const Duration(seconds: 1)),
+        isTrue,
+      );
+      expect((await incoming)['chatAckRequested'], isNull);
+    },
+  );
+
+  test('unrelated receipts cannot falsely confirm delivery', () async {
+    peer.supportsChatAck = true;
+    await _waitForChatAckSupport(mesh, peer);
+    peer.ackMessageIdOverride = 'different-message';
+    await mesh.sendMessage('確認編號測試').timeout(const Duration(seconds: 3));
+    final attempts = peer.received
+        .where((packet) => packet['kind'] == 'aieco.light.chat.v1')
+        .toList();
+    expect(attempts, hasLength(2));
+    expect(attempts[0]['messageId'], attempts[1]['messageId']);
+    expect(mesh.status, contains('未找到其他'));
+  });
+
+  test(
+    'receiver acknowledges immediate receipt and deduplicates retries',
+    () async {
+      final packet = <String, Object?>{
+        'kind': 'aieco.light.chat.v1',
+        'messageId': 'iphone-chat-1',
+        'senderId': _TcpOnlyPeer.nodeId,
+        'senderName': 'HK1234567',
+        'tcpPort': peer.server.port,
+        'text': 'iPhone 即時傳入測試',
+        'chatAckRequested': true,
+      };
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final socket = await Socket.connect(
+          InternetAddress.loopbackIPv4,
+          MeshChatService.tcpPort,
+        );
+        try {
+          final reply = socket
+              .cast<List<int>>()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())
+              .first;
+          socket.writeln(jsonEncode(packet));
+          await socket.flush();
+          final ack =
+              jsonDecode(await reply.timeout(const Duration(seconds: 1)))
+                  as Map;
+          expect(ack['kind'], 'aieco.light.chat_ack.v1');
+          expect(ack['messageId'], 'iphone-chat-1');
+          expect(mesh.incomingMessageVersion, 1);
+          expect(mesh.lastIncomingMessage?.text, 'iPhone 即時傳入測試');
+        } finally {
+          socket.destroy();
+        }
+      }
+    },
+  );
+
+  test(
+    'history sync batches packets and sends chat before bulk data',
+    () async {
+      peer.respondToHello = false;
+      await mesh.sendMessage('歷史訊息一');
+      await mesh.sendMessage('歷史訊息二');
+      final shared = peer.packets.firstWhere(
+        (packet) => packet['kind'] == 'aieco.light.supply.v1',
+      );
+      mesh.shareSupply(title: '飲用水', quantity: '2 箱', note: '交收測試');
+      await shared.timeout(const Duration(seconds: 2));
+
+      final historyConnection = peer.batches.firstWhere(
+        (batch) =>
+            batch.any((packet) => packet['kind'] == 'aieco.light.chat.v1'),
+      );
+      await peer.sendHello(heartbeat: false, reply: false);
+      final batch = await historyConnection.timeout(const Duration(seconds: 2));
+      final kinds = batch.map((packet) => packet['kind']).toList();
+      expect(kinds, [
+        'aieco.light.room.v1',
+        'aieco.light.chat.v1',
+        'aieco.light.chat.v1',
+        'aieco.light.supply.v1',
+      ]);
+      expect(batch[1]['text'], '歷史訊息一');
+      expect(batch[2]['text'], '歷史訊息二');
+
+      // A second hello immediately afterwards must not repeat the bulk sync.
+      final helloHandled = Completer<void>();
+      void listener() {
+        if (!helloHandled.isCompleted) helloHandled.complete();
+      }
+
+      final nextPacket = peer.packets.first;
+      mesh.addListener(listener);
+      try {
+        await peer.sendHello(heartbeat: false, reply: false);
+        await helloHandled.future.timeout(const Duration(seconds: 2));
+      } finally {
+        mesh.removeListener(listener);
+      }
+      await mesh.sendMessage('新訊息');
+      expect((await nextPacket)['kind'], 'aieco.light.chat.v1');
+    },
+  );
 }
 
-Future<void> _waitForPeer(MeshChatService mesh) async {
-  bool present() => mesh.peers.any((peer) => peer.id == _TcpOnlyPeer.nodeId);
+Future<void> _waitForChatAckSupport(
+  MeshChatService mesh,
+  _TcpOnlyPeer peer,
+) async {
+  final ready = Completer<void>();
+  void listener() {
+    if (mesh.peers.any((peer) => peer.supportsChatAck) && !ready.isCompleted) {
+      ready.complete();
+    }
+  }
+
+  mesh.addListener(listener);
+  try {
+    await peer.sendHello();
+    await ready.future.timeout(const Duration(seconds: 1));
+  } finally {
+    mesh.removeListener(listener);
+  }
+}
+
+Future<void> _waitForPeer(
+  MeshChatService mesh, {
+  String id = _TcpOnlyPeer.nodeId,
+}) async {
+  bool present() => mesh.peers.any((peer) => peer.id == id);
   if (present()) return;
   final ready = Completer<void>();
   void listener() {
@@ -133,11 +389,18 @@ class _TcpOnlyPeer {
   static const nodeId = 'tcp-only-android-peer';
   final ServerSocket server;
   final _packets = StreamController<Map<String, dynamic>>.broadcast();
+  final _batches = StreamController<List<Map<String, dynamic>>>.broadcast();
   final _sockets = <Socket>{};
   final received = <Map<String, dynamic>>[];
   bool respondToHello = true;
+  bool supportsChatAck = false;
+  bool holdChatAcks = false;
+  int dropChatAcks = 0;
+  String? ackMessageIdOverride;
+  final _heldChatAcks = <Socket, String>{};
 
   Stream<Map<String, dynamic>> get packets => _packets.stream;
+  Stream<List<Map<String, dynamic>>> get batches => _batches.stream;
 
   static Future<_TcpOnlyPeer> start() async {
     final peer = _TcpOnlyPeer(
@@ -149,6 +412,7 @@ class _TcpOnlyPeer {
 
   void _accept(Socket socket) {
     _sockets.add(socket);
+    final batch = <Map<String, dynamic>>[];
     socket
         .cast<List<int>>()
         .transform(utf8.decoder)
@@ -156,8 +420,19 @@ class _TcpOnlyPeer {
         .listen(
           (line) async {
             final packet = jsonDecode(line) as Map<String, dynamic>;
+            batch.add(packet);
             received.add(packet);
             _packets.add(packet);
+            if (packet['kind'] == 'aieco.light.chat.v1' &&
+                packet['chatAckRequested'] == true) {
+              if (dropChatAcks > 0) {
+                dropChatAcks--;
+              } else if (holdChatAcks) {
+                _heldChatAcks[socket] = packet['messageId'] as String;
+              } else {
+                await _acknowledgeChat(socket, packet['messageId'] as String);
+              }
+            }
             if (respondToHello &&
                 packet['kind'] == 'aieco.light.hello.v1' &&
                 packet['helloReply'] != true) {
@@ -165,6 +440,7 @@ class _TcpOnlyPeer {
             }
           },
           onDone: () {
+            _batches.add(batch);
             _sockets.remove(socket);
             socket.destroy();
           },
@@ -172,7 +448,29 @@ class _TcpOnlyPeer {
         );
   }
 
-  Future<void> sendHello({bool heartbeat = true, bool reply = true}) async {
+  Future<void> _acknowledgeChat(Socket socket, String messageId) async {
+    socket.writeln(
+      jsonEncode({
+        'kind': 'aieco.light.chat_ack.v1',
+        'messageId': ackMessageIdOverride ?? messageId,
+      }),
+    );
+    await socket.flush();
+  }
+
+  Future<void> releaseChatAcks() async {
+    holdChatAcks = false;
+    for (final entry in _heldChatAcks.entries.toList()) {
+      await _acknowledgeChat(entry.key, entry.value);
+    }
+    _heldChatAcks.clear();
+  }
+
+  Future<void> sendHello({
+    bool heartbeat = true,
+    bool reply = true,
+    String id = nodeId,
+  }) async {
     final socket = await Socket.connect(
       InternetAddress.loopbackIPv4,
       MeshChatService.tcpPort,
@@ -182,9 +480,10 @@ class _TcpOnlyPeer {
       jsonEncode(<String, Object?>{
         'kind': 'aieco.light.hello.v1',
         'app': 'AIECO.HK 傳播光',
-        'nodeId': nodeId,
+        'nodeId': id,
         'name': 'HK1234567',
         'tcpPort': server.port,
+        if (supportsChatAck) 'chatAck': true,
         if (reply) 'helloReply': true,
         if (heartbeat) 'heartbeat': true,
       }),
@@ -199,5 +498,6 @@ class _TcpOnlyPeer {
       socket.destroy();
     }
     await _packets.close();
+    await _batches.close();
   }
 }
