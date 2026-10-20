@@ -405,6 +405,134 @@ void main() {
     },
   );
 
+  for (final mode in WifiTransportMode.values) {
+    test(
+      '$mode heartbeat receives missing chat without a reverse route',
+      () async {
+        mesh.setOfflineTransportMode(mode, ready: true);
+        peer.supportsChatPull = true;
+        peer.respondToHello = false;
+        final discovered = _waitForPeer(mesh);
+        await peer.sendHello();
+        await discovered;
+        // Allow sendHello to be handled when the peer was already present.
+        final supportsPull = Completer<void>();
+        void listener() {
+          if (mesh.peers.any((peer) => peer.supportsChatPull) &&
+              !supportsPull.isCompleted) {
+            supportsPull.complete();
+          }
+        }
+
+        mesh.addListener(listener);
+        listener();
+        await supportsPull.future.timeout(const Duration(seconds: 1));
+        mesh.removeListener(listener);
+        for (var index = 0; index < 25; index++) {
+          peer.chatPullMessages.add({
+            'kind': 'aieco.light.chat.v1',
+            'messageId': 'missed-android-$index',
+            'senderId': index == 0 ? 'relayed-author' : _TcpOnlyPeer.nodeId,
+            'senderName': 'HK1234567',
+            'text': '前景補收 $index',
+            'hops': 1,
+          });
+        }
+        final received = Completer<void>();
+        void onMessages() {
+          if (mesh.incomingMessageVersion == 25 && !received.isCompleted) {
+            received.complete();
+          }
+        }
+
+        mesh.addListener(onMessages);
+        try {
+          await mesh.refreshNetworkPresence();
+          await received.future.timeout(
+            const Duration(seconds: 6),
+            onTimeout: () => fail(
+              'Received ${mesh.incomingMessageVersion}; heartbeat requests: '
+              '${peer.received.map((packet) => packet.keys.toList()).toList()}',
+            ),
+          );
+          expect(mesh.messages, hasLength(25));
+          expect(mesh.peers.single.id, _TcpOnlyPeer.nodeId);
+          expect(mesh.peers.single.port, peer.server.port);
+          expect(mesh.peers.single.supportsChatPull, isTrue);
+          final caughtUp = peer.packets.firstWhere(
+            (packet) =>
+                packet['knownMessageIds'] is List &&
+                (packet['knownMessageIds'] as List).length == 25,
+          );
+          await caughtUp.timeout(
+            const Duration(seconds: 6),
+            onTimeout: () =>
+                throw StateError('No second pull: ${peer.received}'),
+          );
+          expect(mesh.incomingMessageVersion, 25);
+        } finally {
+          mesh.removeListener(onMessages);
+        }
+      },
+    );
+  }
+
+  test(
+    'chat pull returns only missing messages on the request socket',
+    () async {
+      peer.respondToHello = false;
+      await mesh.sendMessage('已收到');
+      final knownId = mesh.messages.last.id;
+      for (var index = 0; index < 25; index++) {
+        await mesh.sendMessage('待補收 $index');
+      }
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final socket = await Socket.connect(
+          InternetAddress.loopbackIPv4,
+          MeshChatService.tcpPort,
+        );
+        try {
+          final response = socket
+              .cast<List<int>>()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())
+              .map((line) => jsonDecode(line) as Map)
+              .takeWhile(
+                (packet) => packet['kind'] != 'aieco.light.chat_pull_done.v1',
+              )
+              .toList();
+          socket.writeln(
+            jsonEncode({
+              'kind': 'aieco.light.hello.v1',
+              'nodeId': _TcpOnlyPeer.nodeId,
+              'name': 'HK1234567',
+              'tcpPort': peer.server.port,
+              'heartbeat': true,
+              'chatPull': true,
+              'chatPullRequestId': 'request-$attempt',
+              'knownMessageIds': attempt == 0
+                  ? [knownId]
+                  : mesh.messages.map((message) => message.id).toList(),
+            }),
+          );
+          await socket.flush();
+          final packets = await response.timeout(const Duration(seconds: 2));
+          expect(packets.first['helloReply'], isTrue);
+          final chats = packets.where(
+            (packet) => packet['kind'] == 'aieco.light.chat.v1',
+          );
+          expect(chats, hasLength(attempt == 0 ? 25 : 0));
+          expect(
+            chats.every((packet) => packet['messageId'] != knownId),
+            isTrue,
+          );
+        } finally {
+          socket.destroy();
+        }
+      }
+    },
+  );
+
   test(
     'history sync batches packets and sends chat before bulk data',
     () async {
@@ -504,6 +632,8 @@ class _TcpOnlyPeer {
   final received = <Map<String, dynamic>>[];
   bool respondToHello = true;
   bool supportsChatAck = false;
+  bool supportsChatPull = false;
+  final chatPullMessages = <Map<String, Object?>>[];
   bool holdChatAcks = false;
   int dropChatAcks = 0;
   String? ackMessageIdOverride;
@@ -533,6 +663,34 @@ class _TcpOnlyPeer {
             batch.add(packet);
             received.add(packet);
             _packets.add(packet);
+            if (supportsChatPull && packet['chatPullRequestId'] != null) {
+              socket.writeln(
+                jsonEncode({
+                  'kind': 'aieco.light.hello.v1',
+                  'nodeId': nodeId,
+                  'name': 'HK1234567',
+                  'tcpPort': server.port,
+                  'helloReply': true,
+                  'heartbeat': true,
+                  'chatPull': true,
+                  if (supportsChatAck) 'chatAck': true,
+                }),
+              );
+              final knownIds = (packet['knownMessageIds'] as List).toSet();
+              for (final message in chatPullMessages) {
+                if (!knownIds.contains(message['messageId'])) {
+                  socket.writeln(jsonEncode(message));
+                }
+              }
+              socket.writeln(
+                jsonEncode({
+                  'kind': 'aieco.light.chat_pull_done.v1',
+                  'requestId': packet['chatPullRequestId'],
+                }),
+              );
+              await socket.flush();
+              return;
+            }
             if (packet['kind'] == 'aieco.light.chat.v1' &&
                 packet['chatAckRequested'] == true) {
               if (dropChatAcks > 0) {
@@ -594,6 +752,7 @@ class _TcpOnlyPeer {
         'name': 'HK1234567',
         'tcpPort': server.port,
         if (supportsChatAck) 'chatAck': true,
+        if (supportsChatPull) 'chatPull': true,
         if (reply) 'helloReply': true,
         if (heartbeat) 'heartbeat': true,
       }),
