@@ -61,6 +61,8 @@ git push origin v1.0.6
 
 Workflow 會把 build 上傳到 App Store Connect。Apple review submission、出口合規、價格、截圖、隱私資料和正式 release 時間仍需在 App Store Connect 完成，除非之後再加入額外的 metadata / review automation。
 
+商店名稱、描述及審核回覆草稿見 [iOS App Store 上架文案](IOS_APP_STORE_METADATA.md)。這些資料需要在 App Store Connect 另行儲存，IPA 上傳不會套用文案。
+
 Apple 官方文件：
 
 - [Upload builds](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
