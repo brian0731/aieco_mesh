@@ -621,7 +621,7 @@ final class IosWifiMeshBridge: NSObject {
       if transportMode == Self.transportBluetooth {
         message = "未找到藍芽 peer。請確認兩部 iPhone 已開啟藍芽並允許本地網絡。"
       } else {
-        message = "未找到同一 WiFi 內已開啟本 app 的 iOS LAN peer。請確認兩部手機已連到同一 WiFi 並允許本地網絡。"
+        message = "未找到 WiFi LAN peer。請確認兩部手機已連到同一 WiFi 或 Android 熱點，並允許本地網絡。"
       }
     } else {
       if transportMode == Self.transportBluetooth {
@@ -640,15 +640,15 @@ final class IosWifiMeshBridge: NSObject {
     let args = arguments as? [String: Any]
     let address = args?["deviceAddress"] as? String ?? ""
     guard !address.isEmpty else {
-      return "缺少 iOS LAN peer 位址。"
+      return "缺少 WiFi LAN peer 位址。"
     }
 
     if let peer = peersByKey[address] {
       let host = peer["host"] as? String ?? address
       let port = peer["port"] as? Int ?? Int(Self.servicePort)
-      return "已選取 iOS LAN peer：\(host):\(port)。傳播光會用 TCP mesh 同步。"
+      return "已選取 WiFi LAN peer：\(host):\(port)。傳播光會用 TCP mesh 同步。"
     }
-    return "已選取 iOS LAN peer。傳播光會嘗試用 TCP mesh 同步。"
+    return "已選取 WiFi LAN peer。傳播光會嘗試用 TCP mesh 同步。"
   }
 
   private func setTransportMode(from arguments: Any?, result: @escaping FlutterResult) {
@@ -817,9 +817,9 @@ final class IosWifiMeshBridge: NSObject {
       (peer["deviceName"] as? String) != service.name
     }
     peersByKey[key] = [
-      "deviceName": service.name.isEmpty ? "iOS LAN peer" : service.name,
+      "deviceName": service.name.isEmpty ? "WiFi LAN peer" : service.name,
       "deviceAddress": key,
-      "primaryDeviceType": "ios.local-network",
+      "primaryDeviceType": "lan",
       "secondaryDeviceType": "",
       "status": 0,
       "statusText": "可連接",

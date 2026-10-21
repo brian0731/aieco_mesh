@@ -24,6 +24,8 @@ void main() {
     failNextConnection.clear();
     unavailablePorts.clear();
     mesh = MeshChatService(
+      lanBindAddress: InternetAddress.loopbackIPv4,
+      enableUdpDiscovery: false,
       connectLanSocket: (host, port) {
         if (port == stalledPort) return stalledConnection!.future;
         if (unavailablePorts.contains(port) ||
@@ -47,6 +49,110 @@ void main() {
     mesh.dispose();
     await peer.close();
   });
+
+  WifiP2pPeer lanPeer({bool isAppPeer = true, int? port}) => WifiP2pPeer(
+    name: 'Bonjour Android',
+    address: '127.0.0.1:${port ?? peer.server.port}',
+    status: 3,
+    statusText: '可連接',
+    isGroupOwner: false,
+    isAppPeer: isAppPeer,
+    host: '127.0.0.1',
+    port: port ?? peer.server.port,
+  );
+
+  test(
+    'Bonjour endpoint establishes TCP presence and chat without UDP',
+    () async {
+      await mesh.stop();
+      await mesh.start();
+      expect(mesh.peers, isEmpty);
+
+      final discovered = _waitForPeer(mesh);
+      await mesh.syncDiscoveredLanPeers([lanPeer()]);
+      await discovered;
+      expect(mesh.peers.single.id, _TcpOnlyPeer.nodeId);
+
+      final incoming = peer.packets.firstWhere(
+        (packet) => packet['kind'] == 'aieco.light.chat.v1',
+      );
+      expect(await mesh.sendMessage('Bonjour LAN chat'), isTrue);
+      expect(
+        (await incoming.timeout(const Duration(seconds: 2)))['text'],
+        'Bonjour LAN chat',
+      );
+    },
+  );
+
+  test(
+    'Bonjour scans require a remote hello and throttle duplicate endpoints',
+    () async {
+      await mesh.stop();
+      await mesh.start();
+      peer.respondToHello = false;
+      final before = peer.received.length;
+      final hello = peer.packets.firstWhere(
+        (packet) => packet['kind'] == 'aieco.light.hello.v1',
+      );
+      await mesh.syncDiscoveredLanPeers([lanPeer(), lanPeer()]);
+      await hello.timeout(const Duration(seconds: 2));
+      await mesh.syncDiscoveredLanPeers([lanPeer()]);
+      expect(mesh.peers, isEmpty);
+      expect(peer.received.skip(before), hasLength(1));
+
+      // A transport restart must allow retrying the same advertised endpoint.
+      await mesh.stop();
+      await mesh.start();
+      peer.respondToHello = true;
+      final discovered = _waitForPeer(mesh);
+      await mesh.syncDiscoveredLanPeers([lanPeer()]);
+      await discovered;
+    },
+  );
+
+  test(
+    'Bonjour discovery respects transport readiness and app identity',
+    () async {
+      await mesh.stop();
+      await mesh.start();
+      final before = peer.received.length;
+      await mesh.syncDiscoveredLanPeers([lanPeer(isAppPeer: false)]);
+      await mesh.syncDiscoveredLanPeers([
+        lanPeer(port: 0),
+        lanPeer(port: 65536),
+      ]);
+      mesh.setOfflineTransportMode(WifiTransportMode.wifi, ready: false);
+      await mesh.syncDiscoveredLanPeers([lanPeer()]);
+      mesh.setOfflineTransportMode(WifiTransportMode.bluetooth, ready: true);
+      await mesh.syncDiscoveredLanPeers([lanPeer()]);
+      await mesh.stop();
+      await mesh.syncDiscoveredLanPeers([lanPeer()]);
+      expect(peer.received.length, before);
+      expect(mesh.isRunning, isFalse);
+    },
+  );
+
+  test(
+    'a stalled Bonjour endpoint does not block a healthy endpoint',
+    () async {
+      await mesh.stop();
+      await mesh.start();
+      stalledPort = peer.server.port == 65535 ? 65534 : peer.server.port + 1;
+      stalledConnection = Completer<Socket>();
+      final discovered = _waitForPeer(mesh);
+      final syncing = mesh.syncDiscoveredLanPeers([
+        lanPeer(port: stalledPort),
+        lanPeer(),
+      ]);
+      try {
+        await discovered.timeout(const Duration(seconds: 2));
+        expect(stalledConnection!.isCompleted, isFalse);
+      } finally {
+        stalledConnection!.completeError(const SocketException('Peer offline'));
+        await syncing;
+      }
+    },
+  );
 
   test('TCP heartbeat restores presence without UDP discovery', () async {
     final stalePeer = mesh.peers.single;

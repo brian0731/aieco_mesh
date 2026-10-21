@@ -40,7 +40,7 @@ https://www.youtube.com/watch?v=q94Pgn1gSVc
 - Android Wi-Fi Direct：掃描 P2P 裝置、連接 peer、建立或移除 group。
 - Android 本地熱點：使用 LocalOnlyHotspot 建立沒有外網的本地 WiFi。
 - Android WiFi 選擇：掃描附近 SSID，Android 10+ 透過系統確認框連接給本 app 使用。
-- iOS WiFi LAN peers：使用 Bonjour 掃描同一 WiFi 內已開啟本 app 的用戶，並透過 TCP mesh 同步。
+- iOS / Android WiFi LAN peers：使用 Bonjour / NSD 公告及掃描同一 WiFi 內已開啟本 app 的用戶，並透過 TCP mesh 同步。
 - 顯示本機 IP、P2P group SSID/passphrase、hotspot SSID/passphrase。
 
 ## APP 內功能介紹
@@ -119,9 +119,17 @@ wss://YOUR_RELAY_DOMAIN/ws/light
 ## iOS 使用流程
 
 1. 開啟 app，按「權限」並允許本地網絡。
-2. 確認兩部 iPhone 已連到同一 WiFi。
+2. 確認 iPhone 與另一部 iPhone / Android 已連到同一 WiFi；也可在 Android app 開啟本地熱點，再由 iPhone 的系統 WiFi 設定連入。此網絡不需要 Internet。
 3. 按「掃 LAN」或「掃 LAN 並連接」，選到 peer 後會用 TCP mesh 同步。
 4. 在「傳播頻道」輸入訊息。
+
+### iOS / Android 離線互通驗證
+
+1. 兩端安裝更新版 app，選擇「離線」及「WiFi」模式並啟動節點；iOS 允許本地網絡權限。
+2. 連入同一 WiFi 或 Android 本地熱點。Android 的 Wi-Fi Direct 邀請流程不能代替 iPhone 的系統 WiFi 連線步驟。
+3. 兩端掃描 app peers，確認 iOS 看見 `AIECO Android ...`，Android 看見 iPhone 的 `AIECO ...` LAN peer。
+4. 等待 TCP 握手或點選 LAN peer 連接，測試雙向聊天；關閉路由器的 Internet 連線後仍應能互通。
+5. 若同一 WiFi 掃不到，檢查路由器是否啟用訪客網絡隔離 / AP isolation，並確認兩端節點仍在運行。
 
 ## 藍芽 Mesh 使用流程
 

@@ -119,6 +119,7 @@ private class WifiMeshBridge(private val activity: Activity) {
 
     private val appContext = activity.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val lanPeers = LanPeerDiscovery(appContext)
     private val wifiManager = appContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private val locationManager =
         appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -267,6 +268,7 @@ private class WifiMeshBridge(private val activity: Activity) {
     }
 
     fun unregister() {
+        lanPeers.stop()
         if (receiverRegistered) {
             runCatching { appContext.unregisterReceiver(receiver) }
             receiverRegistered = false
@@ -513,9 +515,14 @@ private class WifiMeshBridge(private val activity: Activity) {
             "discoverAppPeers" -> discoverAppPeers(result)
             "getPeers" -> {
                 requestPeers()
-                result.success(currentPeers)
+                result.success(status()["peers"])
             }
-            "connectPeer" -> connectPeer(call.argument<String>("deviceAddress"), result)
+            "connectPeer" -> connectPeer(
+                call.argument<String>("deviceAddress"),
+                call.argument<String>("host"),
+                call.argument<Int>("port"),
+                result
+            )
             "scanWifi" -> scanWifi(result)
             "connectWifi" -> connectWifi(
                 call.argument<String>("ssid"),
@@ -722,6 +729,7 @@ private class WifiMeshBridge(private val activity: Activity) {
             "platform" to "android",
             "sdkInt" to Build.VERSION.SDK_INT,
             "wifiDirectSupported" to (p2pManager != null && hasP2pFeature),
+            "wifiPeerSupported" to lanPeers.supported,
             "localOnlyHotspotSupported" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O),
             "bluetoothSupported" to (bluetoothAdapter != null && hasBluetoothFeature),
             "torchSupported" to hasTorch(),
@@ -736,6 +744,7 @@ private class WifiMeshBridge(private val activity: Activity) {
 
     private fun status(): Map<String, Any?> {
         refreshKnownNetworks()
+        updateLanDiscovery()
         val selectedNetwork = preferredNetwork()
         val boundToBluetooth = selectedNetwork != null && selectedNetwork == bluetoothNetwork
         val boundToWifi =
@@ -745,6 +754,7 @@ private class WifiMeshBridge(private val activity: Activity) {
 
         // Merge currentPeers with group clients to show connected devices
         val allPeers = buildList {
+            addAll(lanPeers.currentPeers())
             addAll(currentPeers)
 
             // Add group clients (already connected devices) to the peer list
@@ -1294,8 +1304,37 @@ private class WifiMeshBridge(private val activity: Activity) {
         )
     }
 
+    private fun updateLanDiscovery() {
+        if (preferLocalNetwork && transportMode == TRANSPORT_WIFI) {
+            lanPeers.start()
+        } else {
+            lanPeers.stop()
+        }
+    }
+
+    private fun discoverLanPeersIfConnected(result: MethodChannel.Result): Boolean {
+        refreshKnownNetworks()
+        updateLanDiscovery()
+        if (transportMode != TRANSPORT_WIFI || !preferLocalNetwork || !lanPeers.supported) {
+            return false
+        }
+        val hasP2p = p2pManager != null &&
+            activity.packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_DIRECT)
+        if (localNetwork == null && hotspotReservation == null && hasP2p) return false
+        mainHandler.postDelayed({
+            val message = if (lanPeers.currentPeers().isEmpty()) {
+                "未找到 WiFi LAN peer。請確認兩部手機已連到同一 WiFi 或 Android 熱點，並已啟動節點。"
+            } else {
+                "已掃描 WiFi LAN peers，可連接同一網絡內的 iOS / Android。"
+            }
+            result.success(status() + mapOf("message" to message))
+        }, 2200L)
+        return true
+    }
+
     @SuppressLint("MissingPermission")
     private fun discoverPeers(result: MethodChannel.Result) {
+        if (discoverLanPeersIfConnected(result)) return
         val manager = p2pManager ?: run {
             result.error("wifi_direct_unavailable", "此 Android 裝置不支援 Wi-Fi Direct。", null)
             return
@@ -1339,6 +1378,7 @@ private class WifiMeshBridge(private val activity: Activity) {
     }
 
     private fun discoverAppPeers(result: MethodChannel.Result) {
+        if (discoverLanPeersIfConnected(result)) return
         val manager = p2pManager ?: run {
             result.error("wifi_direct_unavailable", "此 Android 裝置不支援 Wi-Fi Direct。", null)
             return
@@ -1589,7 +1629,18 @@ private class WifiMeshBridge(private val activity: Activity) {
     }
 
     @SuppressLint("MissingPermission")
-    private fun connectPeer(deviceAddress: String?, result: MethodChannel.Result) {
+    private fun connectPeer(
+        deviceAddress: String?,
+        host: String?,
+        port: Int?,
+        result: MethodChannel.Result
+    ) {
+        if (!host.isNullOrBlank() && port != null && port in 1..65535 &&
+            deviceAddress == "$host:$port"
+        ) {
+            result.success(status() + mapOf("message" to "已選取 WiFi LAN peer，正在用 TCP mesh 同步。"))
+            return
+        }
         val manager = p2pManager ?: run {
             result.error("wifi_direct_unavailable", "此 Android 裝置不支援 Wi-Fi Direct。", null)
             return

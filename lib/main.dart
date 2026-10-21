@@ -1681,6 +1681,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
       if (_mesh.networkMode != MeshNetworkMode.offline) return;
       if (_wifiMesh.transportMode != WifiTransportMode.wifi) return;
       if (_wifiMesh.isIOS) return;
+      if (_wifiMesh.boundToWifi) return;
       if (_wifiMesh.connection?.groupFormed == true) return;
       if (_wifiMesh.hotspot != null) return;
       if (_wifiMesh.busy) return;
@@ -1728,6 +1729,7 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
 
       if (wirelessReady) {
         await _syncWifiDirectOwnerIfReady(force: forceRejoin || networkChanged);
+        await _mesh.syncDiscoveredLanPeers(_wifiMesh.p2pPeers);
       }
     } finally {
       _wirelessStatusBusy = false;
@@ -10046,7 +10048,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
     final meshPeer = widget.controller.firstAppP2pPeer;
     if (meshPeer == null) {
       widget.controller.setLocalMessage(
-        widget.controller.isIOS
+        widget.controller.scansLanPeers
             ? '未找到同一 WiFi 內已開啟本 app 的 LAN peer。請兩部手機都按「權限」，並允許本地網絡。'
             : '未找到已開啟本 app 的 Wi‑Fi Direct peer。請兩部手機都按「權限」，並保持 WiFi 開啟。',
       );
@@ -10125,7 +10127,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                     : () => unawaited(_scanPeersAndConnectMesh()),
                 icon: const Icon(Icons.radar),
                 label: LocalizedText(
-                  controller.isIOS ? '掃 LAN 並連接' : '掃 P2P 並連接',
+                  controller.scansLanPeers ? '掃 LAN 並連接' : '掃 P2P 並連接',
                 ),
               ),
             ),
@@ -10134,7 +10136,9 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
         const SizedBox(height: 10),
         if (controller.p2pPeers.isNotEmpty) ...[
           LocalizedText(
-            controller.isIOS ? 'WiFi LAN peers' : 'Wi‑Fi Direct peers',
+            controller.isIOS
+                ? 'WiFi LAN peers'
+                : 'WiFi LAN / Wi‑Fi Direct peers',
             style: theme.textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.w800,
             ),
@@ -10211,7 +10215,7 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                       LocalizedText(
                         isBluetoothMode
                             ? '藍芽模式'
-                            : controller.isIOS
+                            : controller.scansLanPeers
                             ? 'WiFi LAN peers'
                             : 'WiFi P2P / 熱點',
                         style: theme.textTheme.titleMedium?.copyWith(
@@ -10289,7 +10293,9 @@ class _WifiMeshPanelState extends State<_WifiMeshPanel> {
                         ? null
                         : () => unawaited(controller.discoverAppPeers()),
                     icon: const Icon(Icons.radar),
-                    label: LocalizedText(controller.isIOS ? '掃 LAN' : '掃 P2P'),
+                    label: LocalizedText(
+                      controller.scansLanPeers ? '掃 LAN' : '掃 P2P',
+                    ),
                   ),
                   if (!controller.isIOS) ...[
                     OutlinedButton.icon(
@@ -10419,7 +10425,7 @@ class _MeshAutoConnectNotice extends StatelessWidget {
           Expanded(
             child: LocalizedText(
               peer == null
-                  ? controller.isIOS
+                  ? controller.scansLanPeers
                         ? 'MESH 自動連接會掃同一 WiFi 內的 app peers，不用輸入 IP。掃到後會用 TCP mesh 同步。'
                         : 'MESH 自動連接會掃 Wi‑Fi Direct app peers，不用輸入密碼。掃到後會發出 P2P 連接邀請。'
                   : '已找到 app peer：${peer.name}，可直接連接。',
@@ -10757,7 +10763,7 @@ class _EmptyWireless extends StatelessWidget {
         ? controller.isIOS
               ? '未有藍芽 peer。先按「權限」，再按「藍芽刷新」。'
               : '未偵測到藍芽網絡。請先在系統開啟藍芽網絡共享，再按「藍芽刷新」。'
-        : controller.isIOS
+        : controller.scansLanPeers
         ? '未有同一 WiFi 內的 app peers。先按「權限」，允許本地網絡，再掃 LAN。'
         : '未有 Wi‑Fi Direct app peers 或 WiFi 掃描結果。先按「權限」，再掃 P2P。';
 
@@ -12540,6 +12546,11 @@ class WifiMeshController extends ChangeNotifier {
   bool get busy => _busy;
   bool get wifiDirectSupported => _wifiDirectSupported;
   bool get wifiPeerSupported => _wifiPeerSupported;
+  bool get scansLanPeers =>
+      isIOS ||
+      (_wifiPeerSupported &&
+          (_hotspot != null ||
+              (_boundToWifi && _connection?.groupFormed != true)));
   bool get hotspotSupported => _hotspotSupported;
   bool get bluetoothSupported => _bluetoothSupported;
   bool get wifiEnabled => _wifiEnabled;
@@ -12605,6 +12616,9 @@ class WifiMeshController extends ChangeNotifier {
     if (_boundToBluetooth) {
       return '已接入藍芽網絡';
     }
+    if (_wifiPeerSupported && _boundToWifi) {
+      return '可掃描 WiFi LAN peers';
+    }
     if (!_wifiDirectSupported && !_wifiPeerSupported && !_bluetoothSupported) {
       return '此裝置未報告 Wi‑Fi Direct / 藍芽';
     }
@@ -12637,7 +12651,7 @@ class WifiMeshController extends ChangeNotifier {
   Future<void> discoverPeers() async {
     await _callStatus(
       'discoverPeers',
-      successMessage: isIOS
+      successMessage: scansLanPeers
           ? '正在掃描 WiFi LAN peers。'
           : '正在掃描 Wi‑Fi Direct peers。',
     );
@@ -12646,7 +12660,7 @@ class WifiMeshController extends ChangeNotifier {
   Future<void> discoverAppPeers() async {
     await _callStatus(
       'discoverAppPeers',
-      successMessage: isIOS
+      successMessage: scansLanPeers
           ? '正在掃描同一 WiFi 內的 app peers。'
           : '正在掃描 Wi‑Fi Direct app peers。',
     );
@@ -12664,7 +12678,7 @@ class WifiMeshController extends ChangeNotifier {
         'host': peer.host,
         'port': peer.port,
       },
-      successMessage: isIOS
+      successMessage: peer.hasLanEndpoint
           ? '已選取 ${peer.name}，正在用 WiFi LAN mesh 同步。'
           : '已向 ${peer.name} 發出 Wi‑Fi Direct 連接邀請。',
     );
@@ -13423,12 +13437,16 @@ class _PendingLanChat {
 }
 
 class MeshChatService extends ChangeNotifier {
-  // Tests may supply a connector to simulate a stalled peer deterministically.
-  MeshChatService({Future<Socket> Function(String, int)? connectLanSocket})
-    : _connectLanSocket = connectLanSocket ?? _defaultConnectLanSocket,
-      _nodeId = _newId('node'),
-      _displayName = _newDisplayName(),
-      _userName = _defaultUserName {
+  // Tests can isolate LAN traffic and simulate stalled peers.
+  MeshChatService({
+    Future<Socket> Function(String, int)? connectLanSocket,
+    InternetAddress? lanBindAddress,
+    this.enableUdpDiscovery = true,
+  }) : _connectLanSocket = connectLanSocket ?? _defaultConnectLanSocket,
+       _lanBindAddress = lanBindAddress ?? InternetAddress.anyIPv4,
+       _nodeId = _newId('node'),
+       _displayName = _newDisplayName(),
+       _userName = _defaultUserName {
     _seenMessageIds.add(_nodeId);
     _rooms[_defaultRoomId] = MeshRoom(
       id: _defaultRoomId,
@@ -13525,6 +13543,8 @@ class MeshChatService extends ChangeNotifier {
 
   String _nodeId;
   final Future<Socket> Function(String, int) _connectLanSocket;
+  final InternetAddress _lanBindAddress;
+  final bool enableUdpDiscovery;
   final Map<String, MeshPeer> _peers = <String, MeshPeer>{};
   final Map<String, RadarContact> _peerLocations = <String, RadarContact>{};
   final Map<String, MeshRadarActivity> _activities =
@@ -13539,6 +13559,7 @@ class MeshChatService extends ChangeNotifier {
   final Set<String> _seenRoomIds = <String>{_defaultRoomId};
   final Map<String, DateTime> _lastSyncAt = <String, DateTime>{};
   final Map<String, DateTime> _lastHelloReplyAt = <String, DateTime>{};
+  final Map<String, DateTime> _lastLanDiscoverySyncAt = <String, DateTime>{};
   final Map<String, _PendingLanChat> _pendingLanChats = {};
   final Set<String> _blockedUserIds = <String>{};
   final Map<String, String> _blockedUserNames = <String, String>{};
@@ -14183,19 +14204,21 @@ class MeshChatService extends ChangeNotifier {
         _localAddresses,
       );
       _tcpServer = await ServerSocket.bind(
-        InternetAddress.anyIPv4,
+        _lanBindAddress,
         tcpPort,
         shared: true,
       );
       _tcpServer?.listen(_handleIncomingSocket);
 
-      _udpSocket = await RawDatagramSocket.bind(
-        InternetAddress.anyIPv4,
-        discoveryPort,
-        reuseAddress: true,
-      );
-      _udpSocket?.broadcastEnabled = true;
-      _udpSocket?.listen(_handleDiscoveryEvent);
+      if (enableUdpDiscovery) {
+        _udpSocket = await RawDatagramSocket.bind(
+          _lanBindAddress,
+          discoveryPort,
+          reuseAddress: true,
+        );
+        _udpSocket?.broadcastEnabled = true;
+        _udpSocket?.listen(_handleDiscoveryEvent);
+      }
 
       _isRunning = true;
       _status = '已啟動離線節點。連到同一 WiFi / mesh LAN 後會自動尋找同伴。';
@@ -14252,7 +14275,7 @@ class MeshChatService extends ChangeNotifier {
         !_sameStringList(_localBroadcastAddresses, nextBroadcastAddresses);
     if (forceRejoin ||
         addressesChanged ||
-        _udpSocket == null ||
+        (enableUdpDiscovery && _udpSocket == null) ||
         _tcpServer == null) {
       await _rejoinTransport(nextAddresses);
       return;
@@ -14338,6 +14361,43 @@ class MeshChatService extends ChangeNotifier {
     if (_isRunning && _offlineTransportReady) {
       _announcePresenceBurst();
     }
+  }
+
+  Future<void> syncDiscoveredLanPeers(Iterable<WifiP2pPeer> discovered) async {
+    if (!_isRunning ||
+        _disposed ||
+        !_presenceVisible ||
+        _networkMode != MeshNetworkMode.offline ||
+        _offlineTransportMode != WifiTransportMode.wifi ||
+        !_offlineTransportReady) {
+      return;
+    }
+
+    final now = DateTime.now();
+    _lastLanDiscoverySyncAt.removeWhere(
+      (_, attemptedAt) => now.difference(attemptedAt) >= _helloReplyThrottle,
+    );
+    final activeEndpoints = peers
+        .map((peer) => '${peer.host}:${peer.port}')
+        .toSet();
+    final connections = <Future<bool>>[];
+    for (final peer in discovered) {
+      if (!peer.isAppPeer ||
+          !peer.hasLanEndpoint ||
+          peer.port > 65535 ||
+          _localAddresses.contains(peer.host)) {
+        continue;
+      }
+      final endpoint = '${peer.host}:${peer.port}';
+      if (activeEndpoints.contains(endpoint) ||
+          _lastLanDiscoverySyncAt.containsKey(endpoint)) {
+        continue;
+      }
+      _lastLanDiscoverySyncAt[endpoint] = now;
+      // Bonjour supplies an endpoint; only the remote hello confirms presence.
+      connections.add(_sendJson(peer.host, peer.port, _helloPacket()));
+    }
+    await Future.wait(connections);
   }
 
   Future<void> syncLanPeer(WifiP2pPeer peer) async {
@@ -14476,6 +14536,7 @@ class MeshChatService extends ChangeNotifier {
     await _tcpServer?.close();
     _tcpServer = null;
     _lastHelloReplyAt.clear();
+    _lastLanDiscoverySyncAt.clear();
     _lastPeerHeartbeatAt = null;
   }
 
@@ -14583,6 +14644,7 @@ class MeshChatService extends ChangeNotifier {
     _peers.clear();
     _peerLocations.clear();
     _lastSyncAt.clear();
+    _lastLanDiscoverySyncAt.clear();
   }
 
   void setDisplayName(String _) {
