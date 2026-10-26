@@ -281,6 +281,8 @@ String _tr(
 }
 
 const Map<String, String> _featureEnglishTranslations = <String, String>{
+  'iPhone 與 Android 對接只可使用藍芽 MESH。':
+      'iPhone and Android can only connect using Bluetooth MESH.',
   '分享 / 交換': 'Share / exchange',
   '分享 / 交換物資': 'Share / exchange supplies',
   '免費分享': 'Free sharing',
@@ -327,6 +329,7 @@ const Map<String, String> _featureEnglishTranslations = <String, String>{
 };
 
 const Map<String, String> _featureSimplifiedTranslations = <String, String>{
+  'iPhone 與 Android 對接只可使用藍芽 MESH。': 'iPhone 与 Android 对接只可使用蓝牙 MESH。',
   '分享 / 交換': '分享 / 交换',
   '分享 / 交換物資': '分享 / 交换物资',
   '免費分享': '免费分享',
@@ -10423,13 +10426,25 @@ class _MeshAutoConnectNotice extends StatelessWidget {
           const Icon(Icons.hub_outlined, color: Color(0xFF285BAA)),
           const SizedBox(width: 10),
           Expanded(
-            child: LocalizedText(
-              peer == null
-                  ? controller.scansLanPeers
-                        ? 'MESH 自動連接會掃同一 WiFi 內的 app peers，不用輸入 IP。掃到後會用 TCP mesh 同步。'
-                        : 'MESH 自動連接會掃 Wi‑Fi Direct app peers，不用輸入密碼。掃到後會發出 P2P 連接邀請。'
-                  : '已找到 app peer：${peer.name}，可直接連接。',
-              style: Theme.of(context).textTheme.bodySmall,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LocalizedText(
+                  peer == null
+                      ? controller.scansLanPeers
+                            ? 'MESH 自動連接會掃同一 WiFi 內的 app peers，不用輸入 IP。掃到後會用 TCP mesh 同步。'
+                            : 'MESH 自動連接會掃 Wi‑Fi Direct app peers，不用輸入密碼。掃到後會發出 P2P 連接邀請。'
+                      : '已找到 app peer：${peer.name}，可直接連接。',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 6),
+                LocalizedText(
+                  'iPhone 與 Android 對接只可使用藍芽 MESH。',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ],
             ),
           ),
         ],
