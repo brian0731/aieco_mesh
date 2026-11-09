@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "lib" / "main.dart"
+SOURCES = [ROOT / "lib" / name for name in ("main.dart", "relay_network_bridge.dart", "network_pairing_client.dart")]
 OUTPUT = ROOT / "lib" / "ui_translations.g.dart"
 HAN = re.compile(r"[\u3400-\u9fff]")
 LITERAL = re.compile(r"'(?:\\.|[^'\\])*'")
@@ -75,7 +75,7 @@ def pattern_entry(source: str, translated: str):
 
 
 def main():
-    source_text = SOURCE.read_text(encoding="utf-8")
+    source_text = "\n".join(source.read_text(encoding="utf-8") for source in SOURCES)
     strings = sorted({dart_value(match.group(0))
                       for match in LITERAL.finditer(source_text)
                       if HAN.search(match.group(0))})

@@ -17,6 +17,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'ui_translations.g.dart';
+import 'relay_network_bridge.dart';
+import 'network_pairing_client.dart';
 
 const String _aiecoWebUrl = 'https://www.aieco.hk';
 const String _communityLifebuoyUrl = 'https://www.aieco.hk/community/lifebuoy';
@@ -35,6 +37,14 @@ const String _launchImageAsset = 'assets/images/launch_fullscreen.png';
 const String _googleMapsApiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
 const String _googleMapsMapId = String.fromEnvironment('GOOGLE_MAPS_MAP_ID');
 const String _onlineRelayUrl = String.fromEnvironment('AIECO_ONLINE_RELAY_URL');
+const String _networkConnectionCode = String.fromEnvironment(
+  'AIECO_NETWORK_CONNECTION_CODE',
+  defaultValue: '582193',
+);
+const String _networkDirectoryUrl = String.fromEnvironment(
+  'AIECO_NETWORK_DIRECTORY_URL',
+  defaultValue: 'https://www.aieco.hk/api/lightmesh',
+);
 const Duration _launchScreenDuration = Duration(milliseconds: 900);
 const double _nearbyRadarMeters = 5;
 const String _nearbyRadarLabel = '5 米內';
@@ -678,7 +688,9 @@ class LocalizedTooltip extends StatelessWidget {
   }
 }
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const PropagationLightApp(showLaunchScreen: true));
 }
 
@@ -2195,6 +2207,9 @@ class _PropagationLightHomeState extends State<PropagationLightHome>
                   children: [
                     _NetworkTabPage(
                       sidePanel: sidePanel,
+                      bridgePanel: _mesh.networkMode == MeshNetworkMode.online
+                          ? _NetworkBridgePanel(mesh: _mesh)
+                          : null,
                       wifiPanel: _mesh.networkMode == MeshNetworkMode.online
                           ? null
                           : wifiPanel,
@@ -2410,11 +2425,13 @@ class _AppHeaderTitle extends StatelessWidget {
 class _NetworkTabPage extends StatelessWidget {
   const _NetworkTabPage({
     required this.sidePanel,
+    required this.bridgePanel,
     this.wifiPanel,
     required this.maxWidth,
   });
 
   final Widget sidePanel;
+  final Widget? bridgePanel;
   final Widget? wifiPanel;
   final double maxWidth;
 
@@ -2432,7 +2449,18 @@ class _NetworkTabPage extends StatelessWidget {
             Expanded(
               child: Row(
                 children: [
-                  SizedBox(width: 320, child: sidePanel),
+                  SizedBox(
+                    width: 340,
+                    child: ListView(
+                      children: [
+                        sidePanel,
+                        if (bridgePanel != null) ...[
+                          const SizedBox(height: 12),
+                          bridgePanel!,
+                        ],
+                      ],
+                    ),
+                  ),
                   if (wifiPanel != null) ...[
                     const SizedBox(width: 16),
                     Expanded(child: wifiPanel!),
@@ -2452,6 +2480,10 @@ class _NetworkTabPage extends StatelessWidget {
           const _NetworkSupportRow(),
           const SizedBox(height: 12),
           sidePanel,
+          if (bridgePanel != null) ...[
+            const SizedBox(height: 12),
+            bridgePanel!,
+          ],
           if (wifiPanel != null) ...[const SizedBox(height: 12), wifiPanel!],
         ],
       ),
@@ -9850,6 +9882,381 @@ class _StatusAndPeersPanel extends StatelessWidget {
   }
 }
 
+class _NetworkBridgePanel extends StatefulWidget {
+  const _NetworkBridgePanel({required this.mesh});
+
+  final MeshChatService mesh;
+
+  @override
+  State<_NetworkBridgePanel> createState() => _NetworkBridgePanelState();
+}
+
+class _NetworkBridgePanelState extends State<_NetworkBridgePanel> {
+  final _code = TextEditingController();
+  String? _error;
+  bool _busy = false;
+
+  Future<void> _pasteCode() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted || data?.text == null) return;
+    setState(() {
+      final value = data!.text!.trim();
+      if (NetworkPairingClient.codePattern.hasMatch(value)) {
+        _code.text = value;
+        _error = null;
+      } else {
+        _error = '請輸入 6 位數字連接碼。';
+      }
+    });
+  }
+
+  Future<void> _join() async {
+    if (!NetworkPairingClient.codePattern.hasMatch(_code.text.trim())) {
+      setState(() => _error = '請輸入 6 位數字連接碼。');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.mesh.connectOtherNetwork(_code.text);
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on Object {
+      if (mounted) setState(() => _error = '暫時未能連接，請稍後再試。');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mesh = widget.mesh;
+    final bridge = mesh.networkBridge;
+    final enabled =
+        mesh.networkMode == MeshNetworkMode.online && mesh.onlineConfigured;
+    final pairingReady = enabled;
+    final accent = bridge.connected
+        ? const Color(0xFF0D7C66)
+        : bridge.active
+        ? const Color(0xFF946000)
+        : const Color(0xFF566B60);
+    final status = bridge.connected
+        ? '已互通'
+        : bridge.active
+        ? '連接中…'
+        : '尚未連接';
+    final textTheme = Theme.of(context).textTheme;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: const BorderSide(color: Color(0xFFDCE6E0)),
+    );
+    return Card(
+      key: const ValueKey('network-bridge-panel'),
+      elevation: 0,
+      color: Colors.white,
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: const ValueKey('network-bridge-toggle'),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+        shape: const Border(),
+        collapsedShape: const Border(),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9F4EF),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.hub_outlined,
+            color: Color(0xFF0D7C66),
+            size: 22,
+          ),
+        ),
+        title: LocalizedText(
+          '連接另一個 光網APP',
+          style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LocalizedText(
+                '有網絡時才可對接',
+                style: textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFF66756D),
+                ),
+              ),
+              const SizedBox(height: 5),
+              Row(
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: LocalizedText(
+                      status,
+                      style: textTheme.bodySmall?.copyWith(color: accent),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        children: [
+          const Divider(height: 1, color: Color(0xFFE5ECE7)),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F8F5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: _BridgeEndpoint(
+                        icon: Icons.phone_android,
+                        label: '本網絡',
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Icon(
+                        bridge.connected ? Icons.sync_alt : Icons.link,
+                        color: accent,
+                        size: 24,
+                      ),
+                    ),
+                    const Expanded(
+                      child: _BridgeEndpoint(
+                        icon: Icons.public,
+                        label: '另一個 APP',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                LocalizedText(
+                  bridge.connected ? '兩個 APP 的聊天室已互通' : '一人接入，兩邊聊天室互通',
+                  textAlign: TextAlign.center,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF4B5F56),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          LocalizedText(
+            '分享本網絡',
+            style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          LocalizedText(
+            '把連接碼交給另一個 APP 的用戶。',
+            style: textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF66756D),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SelectableText(
+            mesh.networkConnectionCode,
+            key: const ValueKey('local-network-code'),
+            textAlign: TextAlign.center,
+            style: textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 6,
+              color: const Color(0xFF0D7C66),
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const ValueKey('copy-network-code'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 46),
+              side: const BorderSide(color: Color(0xFFBDD5C8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () async {
+              await Clipboard.setData(
+                ClipboardData(text: mesh.networkConnectionCode),
+              );
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: LocalizedText('已複製本網絡連接碼')),
+              );
+            },
+            icon: const Icon(Icons.copy_outlined, size: 18),
+            label: const LocalizedText('複製本網絡連接碼'),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 18),
+            child: Divider(height: 1, color: Color(0xFFE5ECE7)),
+          ),
+          LocalizedText(
+            '接入其他網絡',
+            style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          LocalizedText(
+            '貼上對方的連接碼，即可連通聊天室。',
+            style: textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF66756D),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('other-network-code'),
+            controller: _code,
+            enabled: pairingReady && !_busy,
+            autocorrect: false,
+            enableSuggestions: false,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6),
+            ],
+            maxLength: 6,
+            style: textTheme.bodySmall,
+            decoration: InputDecoration(
+              hintText: _localizedUiText('輸入對方的 6 位數字碼'),
+              errorText: _error == null ? null : _localizedUiText(_error!),
+              errorMaxLines: 3,
+              filled: true,
+              fillColor: const Color(0xFFF7F9F8),
+              contentPadding: const EdgeInsets.all(14),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFDCE6E0)),
+              ),
+              suffixIcon: IconButton(
+                key: const ValueKey('paste-network-code'),
+                onPressed: pairingReady && !_busy ? _pasteCode : null,
+                tooltip: _localizedUiText('貼上連接碼'),
+                icon: const Icon(Icons.content_paste_outlined, size: 20),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            key: const ValueKey('join-other-network'),
+            onPressed: _busy || !pairingReady ? null : _join,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0D7C66),
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.link, size: 20),
+            label: LocalizedText(_busy ? '連接中…' : '接通另一個 APP'),
+          ),
+          if (bridge.active || _busy) ...[
+            const SizedBox(height: 8),
+            TextButton.icon(
+              key: const ValueKey('disconnect-other-network'),
+              onPressed: mesh.disconnectOtherNetwork,
+              icon: const Icon(Icons.link_off, size: 18),
+              label: const LocalizedText('中斷互通'),
+            ),
+          ],
+          if (bridge.error != null) ...[
+            const SizedBox(height: 10),
+            LocalizedText(
+              bridge.error!,
+              style: textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF946000),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.info_outline,
+                size: 16,
+                color: Color(0xFF66756D),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: LocalizedText(
+                  !enabled
+                      ? '請先切換線上模式並連接光網，再使用跨 APP 互通。'
+                      : '請保持這部手機的 APP 運行及連網；關閉或停止背景執行後，兩邊互通會暫停。',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF66756D),
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BridgeEndpoint extends StatelessWidget {
+  const _BridgeEndpoint({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(icon, size: 24, color: const Color(0xFF0D7C66)),
+        const SizedBox(height: 6),
+        LocalizedText(
+          label,
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+}
+
 class _NetworkModeNotice extends StatelessWidget {
   const _NetworkModeNotice({required this.mesh});
 
@@ -13457,12 +13864,27 @@ class MeshChatService extends ChangeNotifier {
     Future<Socket> Function(String, int)? connectLanSocket,
     InternetAddress? lanBindAddress,
     this.enableUdpDiscovery = true,
+    String onlineRelayUrl = _onlineRelayUrl,
+    String networkDirectoryUrl = _networkDirectoryUrl,
+    this.networkConnectionCode = _networkConnectionCode,
   }) : _connectLanSocket = connectLanSocket ?? _defaultConnectLanSocket,
+       _pairing = NetworkPairingClient(networkDirectoryUrl),
+       _relayUrl = onlineRelayUrl,
        _lanBindAddress = lanBindAddress ?? InternetAddress.anyIPv4,
        _nodeId = _newId('node'),
        _displayName = _newDisplayName(),
        _userName = _defaultUserName {
+    if (!NetworkPairingClient.codePattern.hasMatch(networkConnectionCode)) {
+      throw const FormatException('請輸入 6 位數字連接碼。');
+    }
     _seenMessageIds.add(_nodeId);
+    networkBridge = RelayNetworkBridge(
+      localRelayUrl: _relayUrl,
+      onConnected: () {
+        _announcePresence();
+        unawaited(_syncRecentStateOnline());
+      },
+    )..addListener(_bridgeChanged);
     _rooms[_defaultRoomId] = MeshRoom(
       id: _defaultRoomId,
       name: _defaultRoomName,
@@ -13557,6 +13979,11 @@ class MeshChatService extends ChangeNotifier {
   static final Random _random = Random.secure();
 
   String _nodeId;
+  final String _relayUrl;
+  final NetworkPairingClient _pairing;
+  final String networkConnectionCode;
+  int _bridgeJoinGeneration = 0;
+  late final RelayNetworkBridge networkBridge;
   final Future<Socket> Function(String, int) _connectLanSocket;
   final InternetAddress _lanBindAddress;
   final bool enableUdpDiscovery;
@@ -13598,7 +14025,7 @@ class MeshChatService extends ChangeNotifier {
   Timer? _chatRetryTimer;
   int _lanChatGeneration = 0;
   Future<void>? _startFuture;
-  MeshNetworkMode _networkMode = _onlineRelayUrl.isEmpty
+  late MeshNetworkMode _networkMode = _relayUrl.isEmpty
       ? MeshNetworkMode.offline
       : MeshNetworkMode.online;
   WifiTransportMode _offlineTransportMode = WifiTransportMode.wifi;
@@ -13615,7 +14042,7 @@ class MeshChatService extends ChangeNotifier {
   bool _disposed = false;
   bool _sosActive = false;
   bool _presenceVisible = true;
-  String _status = _onlineRelayUrl.isEmpty ? '正在準備離線 mesh 節點。' : '正在準備線上光之網絡。';
+  late String _status = _relayUrl.isEmpty ? '正在準備離線 mesh 節點。' : '正在準備線上光之網絡。';
   List<String> _localAddresses = <String>[];
   List<String> _localBroadcastAddresses = <String>[];
   DateTime? _eulaAcceptedAt;
@@ -13626,10 +14053,54 @@ class MeshChatService extends ChangeNotifier {
 
   bool get isRunning => _isRunning;
   MeshNetworkMode get networkMode => _networkMode;
-  bool get onlineConfigured => _onlineRelayUrl.trim().isNotEmpty;
+  bool get onlineConfigured => _relayUrl.trim().isNotEmpty;
   bool get onlineConnected =>
       _onlineSocket != null && _onlineSocket?.readyState == WebSocket.open;
-  String get onlineRelayUrl => _onlineRelayUrl;
+  String get onlineRelayUrl => _relayUrl;
+
+  void _bridgeChanged() {
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> connectOtherNetwork(String code) async {
+    if (_networkMode != MeshNetworkMode.online || !onlineConfigured) {
+      throw const FormatException('請先啟用已設定的線上光網。');
+    }
+    final otherCode = code.trim();
+    if (!NetworkPairingClient.codePattern.hasMatch(otherCode)) {
+      throw const FormatException('請輸入 6 位數字連接碼。');
+    }
+    if (otherCode == networkConnectionCode) {
+      throw const FormatException('這是本網絡的連接碼，請使用另一個 APP 的連接碼。');
+    }
+    final generation = ++_bridgeJoinGeneration;
+    final relay = await _pairing.resolve(otherCode);
+    if (_disposed ||
+        generation != _bridgeJoinGeneration ||
+        _networkMode != MeshNetworkMode.online) {
+      return;
+    }
+    await start();
+    if (_disposed ||
+        generation != _bridgeJoinGeneration ||
+        _networkMode != MeshNetworkMode.online) {
+      return;
+    }
+    if (!onlineConnected) {
+      throw const FormatException('請等待本網絡連線成功後再接入另一個 APP。');
+    }
+    await networkBridge.join(relay);
+  }
+
+  void disconnectOtherNetwork() {
+    _bridgeJoinGeneration++;
+    networkBridge.disconnect();
+  }
+
+  Future<String> getNetworkConnectionCode() async {
+    return networkConnectionCode;
+  }
+
   String get displayName => _displayName;
   String get userName => _userName;
   String get identityName =>
@@ -14530,6 +15001,7 @@ class MeshChatService extends ChangeNotifier {
   }
 
   Future<void> _closeTransport() async {
+    disconnectOtherNetwork();
     _announcementTimer?.cancel();
     _cleanupTimer?.cancel();
     _onlineReconnectTimer?.cancel();
@@ -14570,7 +15042,7 @@ class MeshChatService extends ChangeNotifier {
     _onlineConnecting = true;
 
     try {
-      final socket = await WebSocket.connect(_onlineRelayUrl.trim());
+      final socket = await WebSocket.connect(_relayUrl.trim());
       if (_disposed || !_isRunning || _networkMode != MeshNetworkMode.online) {
         _onlineConnecting = false;
         await socket.close(WebSocketStatus.normalClosure, 'mode changed');
@@ -17527,6 +17999,8 @@ class MeshChatService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    networkBridge.removeListener(_bridgeChanged);
+    networkBridge.dispose();
     _clearPendingLanChats();
     if (_isRunning) {
       _announceGoodbye();

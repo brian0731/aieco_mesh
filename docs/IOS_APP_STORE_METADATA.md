@@ -16,7 +16,7 @@
 ### 名稱
 
 ```text
-傳播光 LightMesh
+傳播光 LightMesh - 防災APP
 ```
 
 ### 副標題
@@ -49,7 +49,7 @@
 ### Name
 
 ```text
-傳播光 LightMesh
+傳播光 LightMesh - 防災APP
 ```
 
 ### Subtitle
@@ -84,7 +84,7 @@ Location features require your permission. You can choose whether to enable loca
 ```text
 Thank you for your feedback.
 
-We have updated the App Store name to “傳播光 LightMesh” and removed pricing references from the name and subtitle.
+We have updated the App Store name to “傳播光 LightMesh - 防災APP” and removed pricing references from the name and subtitle.
 
 We have revised the app description to remove Android references and focus on the features available in the iOS app, including community chat, topic groups, supply sharing, location sharing and SOS signaling. The description also explains the network requirements for offline local chat.
 

@@ -39,6 +39,7 @@ jobs:
       APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
       APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
       AIECO_ONLINE_RELAY_URL: ${{ secrets.AIECO_ONLINE_RELAY_URL }}
+      AIECO_NETWORK_DIRECTORY_URL: ${{ secrets.AIECO_NETWORK_DIRECTORY_URL }}
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
       REQUESTED_BUILD_NAME: ${{ github.event.inputs.build_name || '' }}
       REQUESTED_BUILD_NUMBER: ${{ github.event.inputs.build_number || '' }}
@@ -246,6 +247,9 @@ jobs:
         shell: bash
         run: |
           dart_defines=()
+          if [[ -n "$AIECO_NETWORK_DIRECTORY_URL" ]]; then
+            dart_defines+=(--dart-define "AIECO_NETWORK_DIRECTORY_URL=$AIECO_NETWORK_DIRECTORY_URL")
+          fi
           if [[ -n "$AIECO_ONLINE_RELAY_URL" ]]; then
             echo "Including dart define AIECO_ONLINE_RELAY_URL."
             dart_defines+=(--dart-define "AIECO_ONLINE_RELAY_URL=$AIECO_ONLINE_RELAY_URL")

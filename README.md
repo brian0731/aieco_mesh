@@ -1,6 +1,33 @@
-# 傳播光 (LightMesh)
+# 傳播光 LightMesh - 防災APP
 
 傳播光 LightMesh 是一個免費的線上或離線光之網絡防災、分享物資與定位工具。
+
+## APP A 可找 APP B／APP B 可找 APP A：一人接入，兩個 APP 聊天室全通
+
+兩個使用相容 LightMesh 聊天協定的 APP，即使部署在不同 App server、各自連接不同的聊天 relay，也可透過交換連接碼互相接通。A 或 B 任何一邊只需一位用戶接入對方網絡，就能雙向轉傳兩邊所有在線用戶的聊天訊息，其他用戶不用逐一接入。
+
+📖 [互連 APP 設置教學：從伺服器、6 位連接碼到聊天室互通](docs/INTERCONNECT_APP_SETUP.md)
+
+🛠️ [互連 APP 後端 Nuxt Setup + AI Prompt](docs/INTERCONNECT_NUXT_SETUP_AI_PROMPT.md)：隨機生成及保存 6 位連接碼、查碼 API、WebSocket relay 與部署開發提示詞。
+
+### 連接教學
+
+1. 兩邊使用包含此功能的 APP 版本，各自開啟「光之網絡」，選擇「線上」，確認已連上自己的光網。
+2. 在 APP B 開啟「光之網絡 → 連接另一個 光網APP」，查看本網絡的 **6 位數字連接碼**，按「複製本網絡連接碼」交給 APP A 的一位用戶。
+3. 這位 APP A 用戶開啟同一功能，輸入或貼上 B 的 6 位數字碼，按「接通另一個 APP」。也可以由 A 分享連接碼，讓 B 的一位用戶接入，效果相同。
+4. 顯示「兩個 APP 的聊天室已互通」後，兩邊用戶到「光之通道」的預設「傳播頻道」即可互相聊天。其他光團也會同步；同名但不同 ID 的光團仍是不同聊天室。
+5. 接入者保持 APP 運行及連網，即可持續替兩邊轉傳；連線中斷會自動重試。按「中斷互通」、停止節點或切換離線模式，可結束這部手機的互通連線。
+
+本 APP 直接顯示及複製 `582193`，不需向服務查詢本網絡的碼；請把它交給另一個光網的用戶，不能用來接入自己。
+
+### 連線條件
+
+- 管理員須先部署共用配對服務，設定各個光網的 6 位碼，兩個 APP 皆以相同的 `AIECO_NETWORK_DIRECTORY_URL` 建置。設定方式見 [6 位碼配對服務部署](docs/CROSS_APP_CHAT.md#6-位碼配對服務部署)。
+- 透過連接碼接通兩個 APP 時，接入者的手機必須能連到兩邊的聊天伺服器；使用 Internet 上的伺服器時，需要上網。透過交換連接碼找到對方，不會自動搜尋 Internet 上的 APP。
+- 接通期間，兩邊聊天、光團及光點等資料會互相傳播。接入者關閉 APP 或被系統暫停背景執行時，這部手機的轉發也會暫停；重新開啟 APP 後需重新接入。
+- 沒有 Internet，但兩邊裝置連到同一 WiFi／手機熱點時，可使用原有「離線 mesh」聊天，熱點本身不需要上網。目前連接碼功能不會把兩個分開的離線網絡自動橋接；沒有任何可互通的 WiFi、藍芽或其他傳輸通道時，無法連接。
+
+完整設定與限制見 [跨 APP 聊天網絡互通教學](docs/CROSS_APP_CHAT.md)。
 
 WEB
 https://www.aieco.hk/community/lifebuoy
@@ -24,8 +51,11 @@ https://www.youtube.com/watch?v=q94Pgn1gSVc
 
 ## 文件
 
+- [互連 APP 後端 Nuxt Setup + AI Prompt](docs/INTERCONNECT_NUXT_SETUP_AI_PROMPT.md)：後端隨機配碼規格、防重複與保存、API、Apache 代理及完整 AI 提示詞。
 - [WebSocket Relay 生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：用 Nuxt 4 / Nitro 生成線上聊天 relay server。
 - [本機 Dart Relay 範例](tool/aieco_light_relay.dart)：不加依賴的測試 relay，可在開發機直接跑。
+- [互連 APP 設置教學](docs/INTERCONNECT_APP_SETUP.md)：逐步設定 APP A／B、登記 6 位碼、建置 APP 及測試聊天室互通。
+- [跨 APP 聊天網絡互通](docs/CROSS_APP_CHAT.md)：一名用戶貼上另一個 APP 的連接碼，即可雙向連通不同 relay 的聊天室。
 
 ## 功能
 

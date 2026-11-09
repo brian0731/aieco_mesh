@@ -21,6 +21,7 @@ Workflow 會在 `macos-26` runner 上編譯 Flutter iOS app、簽署 IPA、把 I
 可選 release build secrets：
 
 - `AIECO_ONLINE_RELAY_URL`：正式 WebSocket relay URL，例如 `wss://YOUR_RELAY_DOMAIN/ws/light`。
+- `AIECO_NETWORK_DIRECTORY_URL`：共用 6 位碼配對服務 HTTPS 地址，例如 `https://YOUR_DIRECTORY_DOMAIN`；跨 APP 數字碼接入需要此設定。
 - `GOOGLE_MAPS_API_KEY`：正式 Google Maps API key。
 
 ## 轉成 Base64
