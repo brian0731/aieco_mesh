@@ -1,6 +1,6 @@
 # 生成提示詞
 
-本篇合併 WebSocket Relay 與互連 APP 後端 Nuxt Setup，包含原生 WebSocket 廣播、隨機 6 位連接碼、查碼 API、部署及完整 AI Prompt。可直接複製[完整生成提示詞](#6-可直接複製的-ai-prompt)交給 AI 開發工具；APP 端操作另見[互連 APP 設置教學](INTERCONNECT_APP_SETUP.md)。
+本篇合併 WebSocket Relay 與互連 APP 後端 Nuxt Setup，包含原生 WebSocket 廣播、隨機 6 位連接碼、查碼 API、Nginx／Apache 部署及完整 AI Prompt。可直接複製[完整生成提示詞](#6-可直接複製的-ai-prompt)交給 AI 開發工具；APP 端操作另見[互連 APP 設置教學](INTERCONNECT_APP_SETUP.md)。
 
 ## 1. 後端如何配合兩個 APP
 
@@ -161,6 +161,87 @@ ProxyPassReverse "/api/lightmesh/" "http://127.0.0.1:3000/api/lightmesh/"
 
 此範例沿用 `ws://` ProxyPass 寫法；Apache 2.4.47 起也可由 `mod_proxy_http` 處理 WebSocket upgrade，應按已安裝版本合併設定，參考 [Apache WebSocket 代理官方文件](https://httpd.apache.org/docs/2.4/mod/mod_proxy_wstunnel.html)。
 
+### Nginx Setup：HTTPS、WebSocket 與查碼 API
+
+使用 Nginx 的主機可採以下方式代理到同一台機器的 Nuxt Node 程序 `127.0.0.1:3000`。先完成網域 DNS 及有效 TLS 憑證設定，再把 `relay.example.com`、憑證路徑和 Node port 換成部署值。憑證須涵蓋 APP 實際使用的網域；設定參考 [Nginx HTTPS 官方文件](https://nginx.org/en/docs/http/configuring_https_servers.html)。
+
+以下片段放在 Nginx 的 `http { ... }` 內，例如由該區塊載入的 `conf.d/lightmesh.conf`；`map` 不可放進 `server` 或 `location`。若已有同網域的 HTTPS server，合併對應 location，保留既有網站路由；不要建立重複的同網域 server。
+
+```nginx
+map $http_upgrade $lightmesh_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name relay.example.com;
+    return 301 https://relay.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name relay.example.com;
+
+    ssl_certificate     /etc/nginx/ssl/relay.example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/relay.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location = /ws/light {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $lightmesh_connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
+
+    location ^~ /api/lightmesh/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache off;
+    }
+
+    # 僅在整站也由這個 Nuxt 程序提供時使用；既有網站保留自己的 location /。
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+`proxy_pass` 未附加 URI，會保留 `/ws/light` 及 `/api/lightmesh/...` 路徑與查詢參數。WebSocket location 明確傳遞 Upgrade／Connection 標頭，並提高閒置讀取逾時；這些設定依據 [Nginx WebSocket 官方文件](https://nginx.org/en/docs/http/websocket.html)。逾時仍不是永久連線保證，APP 應維持原有斷線重連；也可由 relay 提供適當的 WebSocket ping。
+
+在 Nginx 主機檢查設定，成功後才重載；Linux 範例：
+
+```sh
+sudo nginx -t
+# 上一條成功後才執行：
+sudo nginx -s reload
+curl --fail https://relay.example.com/api/lightmesh/health
+```
+
+Windows Nginx 在其安裝目錄使用 `nginx.exe -t`，成功後執行 `nginx.exe -s reload`。若還有 CDN 或上游代理，亦須允許 WebSocket upgrade。Apache 與 Nginx 是替代代理方式；若在同一主機使用，須規劃不同監聽位址或 port，避免同時佔用 80／443。
+
+APP 的 relay URL 設為 `wss://relay.example.com/ws/light`；共用查碼 base URL 設為提供登記服務的 `https://YOUR_DIRECTORY_DOMAIN/api/lightmesh`。查碼服務若部署在另一個網域，不需在每台 relay 重複部署，兩個 APP 仍使用同一 directory base。
+
+驗證時應先確認內部 Nuxt health 可用，再檢查外部 HTTPS health。WebSocket 請另以真實客戶端測試：握手應回傳 HTTP 101，並確認兩個客戶端能廣播訊息。502 常見於 Node 未啟動或 port 不符；404 檢查路徑與 location；連線定時中斷則檢查代理／CDN 的逾時及 ping 設定。
+
 此入門方案每個光網使用單一 relay 程序。多程序或多台 replica 的記憶體廣播不會自然互通；需要另設共用 pub/sub，不能只增加 worker 數目。
 
 ## 5. 驗證後端及 APP
@@ -294,7 +375,12 @@ _lightBridgePath 及未知附加欄位保持不變，斷線不影響其他用戶
 - 相容 Node／Nuxt／Nitro 版本、安裝、npm run dev、建置與正式啟動指令。
 - node --env-file=.env .output/server/index.mjs 的環境載入方式及程序重啟方式。
 - XAMPP htdocs 不會自動執行 Nuxt，需常駐 Node + Apache 代理。
-- HTTPS 查碼 API、WSS upgrade 路徑、Apache 代理範例與設定檢查。
+- HTTPS 查碼 API、WSS upgrade 路徑、Apache 及 Nginx 代理範例與設定檢查。
+- Nginx 提供可放在 http 區塊的完整 map/server/location 範例，包含 TLS 憑證、
+  HTTP 轉 HTTPS、/ws/light 的 HTTP/1.1 Upgrade/Connection、逾時、關閉 buffering、
+  /api/lightmesh/ 保留原始 URI 與 query 的 proxy_pass，以及轉發 Host/來源 IP/協定。
+- Nginx 合併既有網域設定，保留其他網站路由；提供 nginx -t、成功後 reload、
+  內外部 health 及真實 WebSocket 101/廣播驗證，記錄沒有環境可實測的部分。
 - API curl／PowerShell 驗證及 WebSocket 驗證方法。
 - APP A/B 三項 dart-define：AIECO_ONLINE_RELAY_URL、
   AIECO_NETWORK_CONNECTION_CODE、AIECO_NETWORK_DIRECTORY_URL。

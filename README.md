@@ -35,7 +35,7 @@ https://www.youtube.com/watch?v=q94Pgn1gSVc
 
 ## 文件
 
-- [生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：WebSocket Relay、互連 APP 後端 Nuxt Setup、隨機 6 位連接碼、API、部署及完整 AI Prompt。
+- [生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：WebSocket Relay、互連 APP 後端 Nuxt Setup、隨機 6 位連接碼、API、Nginx／Apache Setup 及完整 AI Prompt。
 - [本機 Dart Relay 範例](tool/aieco_light_relay.dart)：不加依賴的測試 relay，可在開發機直接跑。
 - [互連 APP 設置教學](docs/INTERCONNECT_APP_SETUP.md)：逐步設定 APP A／B、登記 6 位碼、建置 APP 及測試聊天室互通。
 - [跨 APP 聊天網絡互通](docs/CROSS_APP_CHAT.md)：一名用戶貼上另一個 APP 的連接碼，即可雙向連通不同 relay 的聊天室。
