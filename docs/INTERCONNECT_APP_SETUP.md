@@ -4,7 +4,7 @@
 
 這篇文章先說明管理員如何設定，再說明用戶如何接通。已有兩個完成設定的 APP，可直接跳到[手機操作](#手機操作)。
 
-需要建立或補齊 Nuxt 後端，請閱讀[互連 APP 後端 Nuxt Setup + AI Prompt](INTERCONNECT_NUXT_SETUP_AI_PROMPT.md)，內附可直接複製的 AI 開發提示詞。
+需要建立或補齊 Nuxt 後端，請閱讀[生成提示詞](WEBSOCKET_RELAY_PROMPT.md)，內附可直接複製的 AI 開發提示詞。
 
 ## 先了解三項設定
 
@@ -20,7 +20,7 @@
 
 ## 第一步：準備兩個聊天伺服器
 
-兩邊須使用相容的原生 WebSocket LightMesh 協定，並保留訊息中的欄位。已有相容 relay 可以直接沿用；建立新伺服器可參考 [WebSocket Relay 設置說明](WEBSOCKET_RELAY_PROMPT.md)及[本機 Dart Relay 範例](../tool/aieco_light_relay.dart)。
+兩邊須使用相容的原生 WebSocket LightMesh 協定，並保留訊息中的欄位。已有相容 relay 可以直接沿用；建立新伺服器可參考 [生成提示詞](WEBSOCKET_RELAY_PROMPT.md)及[本機 Dart Relay 範例](../tool/aieco_light_relay.dart)。
 
 以下統一用佔位地址示範，請換成管理員實際部署的地址：
 

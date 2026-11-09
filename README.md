@@ -4,7 +4,7 @@
 
 ## APP A 可找 APP B／APP B 可找 APP A：一人接入，兩個 APP 聊天室全通
 
-1. 按照 [互連 APP 後端 Nuxt Setup + AI Prompt](docs/INTERCONNECT_NUXT_SETUP_AI_PROMPT.md) 完成後端及連接碼設定。
+1. 按照 [生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md) 完成後端及連接碼設定。
 2. 將 APP 的 `AIECO_ONLINE_RELAY_URL` 改成自己的 WebSocket relay URL，再重新建置：
 
    ```powershell
@@ -35,8 +35,7 @@ https://www.youtube.com/watch?v=q94Pgn1gSVc
 
 ## 文件
 
-- [互連 APP 後端 Nuxt Setup + AI Prompt](docs/INTERCONNECT_NUXT_SETUP_AI_PROMPT.md)：後端隨機配碼規格、防重複與保存、API、Apache 代理及完整 AI 提示詞。
-- [WebSocket Relay 生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：用 Nuxt 4 / Nitro 生成線上聊天 relay server。
+- [生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)：WebSocket Relay、互連 APP 後端 Nuxt Setup、隨機 6 位連接碼、API、部署及完整 AI Prompt。
 - [本機 Dart Relay 範例](tool/aieco_light_relay.dart)：不加依賴的測試 relay，可在開發機直接跑。
 - [互連 APP 設置教學](docs/INTERCONNECT_APP_SETUP.md)：逐步設定 APP A／B、登記 6 位碼、建置 APP 及測試聊天室互通。
 - [跨 APP 聊天網絡互通](docs/CROSS_APP_CHAT.md)：一名用戶貼上另一個 APP 的連接碼，即可雙向連通不同 relay 的聊天室。
@@ -112,7 +111,7 @@ wss://YOUR_RELAY_DOMAIN/ws/light
 wss://YOUR_RELAY_DOMAIN/ws/light
 ```
 
-生成 Nuxt / Nitro relay server 的完整提示詞在 [docs/WEBSOCKET_RELAY_PROMPT.md](docs/WEBSOCKET_RELAY_PROMPT.md)。
+生成 Nuxt / Nitro relay server 的完整提示詞在 [生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md)。
 
 ## 離線模式 Port
 
