@@ -2,7 +2,8 @@
 
 傳播光 LightMesh 是一個免費的線上或離線光之網絡防災、分享物資與定位工具。
 
-## APP A 與 APP B 雙向互連：一人接入，即可連通兩邊聊天室
+## APP A 與 APP B 雙向互連：一人接入，即可連通兩邊聊天室 
+## 主機連接碼 582193 
 
 1. 按照 [生成提示詞](docs/WEBSOCKET_RELAY_PROMPT.md) 完成後端及連接碼設定。
 2. 將 APP 的 `AIECO_ONLINE_RELAY_URL` 改成自己的 WebSocket relay URL，再重新建置：
